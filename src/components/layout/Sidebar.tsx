@@ -2,7 +2,7 @@
 import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname, useRouter } from 'next/navigation'
-import { LayoutDashboard, Users, Star, Film, PhoneCall, Settings, LogOut, ShieldCheck, Users2, FileText, ShieldAlert, Layers, ClipboardList, UserCircle2 } from 'lucide-react'
+import { LayoutDashboard, Users, Star, Film, PhoneCall, Settings, LogOut, ShieldCheck, Users2, FileText, ShieldAlert, Layers, ClipboardList, UserCircle2, Link2, ScrollText } from 'lucide-react'
 import { clearAdminToken, getPortalMode } from '@/lib/api'
 import { usePermissions } from '@/lib/permissions-context'
 
@@ -20,10 +20,12 @@ const NAV = [
 ]
 
 const ADMIN_NAV = [
-  { href: '/team',          label: 'Team',          icon: Users2,      permission: 'team.view' },
-  { href: '/roles',         label: 'Roles',         icon: ShieldCheck, permission: 'roles.view' },
-  { href: '/blocked-words', label: 'Blocked Words', icon: ShieldAlert, permission: 'settings.manage' },
-  { href: '/settings',      label: 'Settings',      icon: Settings,    permission: 'settings.view' },
+  { href: '/team',                label: 'Team',               icon: Users2,      permission: 'team.view' },
+  { href: '/roles',               label: 'Roles',              icon: ShieldCheck, permission: 'roles.view' },
+  { href: '/celebrity-managers',  label: 'Celeb. Managers',   icon: Link2,       permission: 'celebrity_managers.view' },
+  { href: '/audit-logs',          label: 'Audit Logs',         icon: ScrollText,  permission: 'audit_logs.view' },
+  { href: '/blocked-words',       label: 'Blocked Words',      icon: ShieldAlert, permission: 'settings.manage' },
+  { href: '/settings',            label: 'Settings',           icon: Settings,    permission: 'settings.view' },
 ]
 
 interface SidebarProps {

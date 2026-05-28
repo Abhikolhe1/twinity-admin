@@ -118,8 +118,8 @@ async function req<T>(path: string, options?: RequestInit): Promise<T> {
     if (typeof window !== 'undefined')
     throw new Error('Session expired')
   }
-  if (res.status === 429) throw new Error('Too many attempts. Please wait a moment and try again.')
-  const data = await res.json()
+  const data = await res.json().catch(() => ({})) as any
+  if (res.status === 429) throw new Error(data.message || 'Too many attempts. Please wait a moment and try again.')
   if (!res.ok) throw new Error(data.message || 'Request failed')
   return data
 }
@@ -130,7 +130,16 @@ export const adminApi = {
   resetPassword:   (token: string, body: object) => req(`/admin/reset-password/${token}`, { method: 'POST', body: JSON.stringify(body) }),
   dashboard:      () => req('/admin/dashboard'),
   users:          (params = '') => req(`/admin/users?${params}`),
+  getUser:        (id: string) => req(`/admin/users/${id}`),
   updateUser:     (id: string, body: object) => req(`/admin/users/${id}/status`, { method: 'PATCH', body: JSON.stringify(body) }),
+  getUserAuditLogs: (id: string, params = '') => req(`/admin/users/${id}/audit-logs?${params}`),
+  auditLogs:      (params = '') => req(`/admin/audit-logs?${params}`),
+
+  managerLinks:         (params = '') => req(`/admin/celebrity-managers?${params}`),
+  getCelebrityManagers: (celebrityId: string) => req(`/admin/celebrity-managers/${celebrityId}/managers`),
+  addCelebrityManager:  (celebrityId: string, body: object) => req(`/admin/celebrity-managers/${celebrityId}/managers`, { method: 'POST', body: JSON.stringify(body) }),
+  updateCelebrityManager: (celebrityId: string, linkId: string, body: object) => req(`/admin/celebrity-managers/${celebrityId}/managers/${linkId}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  removeCelebrityManager: (celebrityId: string, linkId: string) => req(`/admin/celebrity-managers/${celebrityId}/managers/${linkId}`, { method: 'DELETE' }),
 
   celebrities:    (params = '') => req(`/admin/celebrities?${params}`),
   createCelebrityPortalAccess: (id: string) => req(`/admin/celebrities/${id}/portal-access`, { method: 'POST' }),
