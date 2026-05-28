@@ -1,0 +1,116 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── Aeonik Pro Fonts ─────────────────────────────────────── */
+@font-face {
+  font-family: 'AeonikPro';
+  src: url('/fonts/AeonikProTRIAL-Light.otf') format('opentype');
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'AeonikPro';
+  src: url('/fonts/AeonikProTRIAL-LightItalic.otf') format('opentype');
+  font-weight: 300;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'AeonikPro';
+  src: url('/fonts/AeonikProTRIAL-Regular.otf') format('opentype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'AeonikPro';
+  src: url('/fonts/AeonikProTRIAL-RegularItalic.otf') format('opentype');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'AeonikPro';
+  src: url('/fonts/AeonikProTRIAL-Bold.otf') format('opentype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'AeonikPro';
+  src: url('/fonts/AeonikProTRIAL-BoldItalic.otf') format('opentype');
+  font-weight: 700;
+  font-style: italic;
+  font-display: swap;
+}
+
+/* ─── CSS Variables (White + Purple — same as web app) ──────── */
+:root {
+  --bg-page:        #F8F5FF;
+  --bg-white:       #FFFFFF;
+  --bg-subtle:      #F0EBFF;
+  --bg-elevated:    #EDE5FF;
+  --brand-purple:   #9a78fe;
+  --brand-dark:     #422266;
+  --text-primary:   #1a0a30;
+  --text-secondary: #4a3465;
+  --text-muted:     #8b7aaa;
+  --border:         rgba(154,120,254,0.18);
+  --border-subtle:  rgba(154,120,254,0.10);
+  --border-hover:   rgba(154,120,254,0.45);
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+
+body {
+  background-color: var(--bg-page);
+  color: var(--text-primary);
+  font-family: 'AeonikPro', system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+}
+
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: var(--bg-subtle); }
+::-webkit-scrollbar-thumb { background: rgba(154,120,254,0.35); border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(154,120,254,0.6); }
+
+::selection { background: rgba(154,120,254,0.18); color: #1a0a30; }
+
+/* Cards */
+.card {
+  background: #fff;
+  border: 1px solid rgba(154,120,254,0.14);
+  border-radius: 1rem;
+  box-shadow: 0 1px 3px rgba(154,120,254,0.06), 0 4px 16px rgba(154,120,254,0.04);
+}
+
+/* Gradient text */
+.text-gradient {
+  background: linear-gradient(135deg, #9a78fe 0%, #422266 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Decorative blurred orbs — same system as web app */
+.orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(72px);
+  pointer-events: none;
+  animation: float 10s ease-in-out infinite;
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px)   scale(1);    }
+  50%       { transform: translateY(-22px) scale(1.04); }
+}
+
+.orb-delay-2 { animation-delay: 2s;  }
+.orb-delay-4 { animation-delay: 4s;  }
+.orb-delay-6 { animation-delay: 6s;  }
+.orb-delay-8 { animation-delay: 8s;  }
