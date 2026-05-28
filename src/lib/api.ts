@@ -94,6 +94,14 @@ export type CelebrityApplication = {
   reviewed_by?: { id: string; name: string; email: string } | null
 }
 
+export type CelebrityPortalTemplate = {
+  id: string
+  name: string
+  purpose: string
+  product_types: string[]
+  duration: string
+}
+
 async function req<T>(path: string, options?: RequestInit): Promise<T> {
   const mode = getPortalMode()
   const token = getAdminToken(mode)
@@ -161,7 +169,7 @@ export const adminApi = {
   celebrityApplications: (params = '') => req<{ success: boolean; data: CelebrityApplication[]; total: number; page: number; pages: number }>(`/admin/celebrity-applications${params ? `?${params}` : ''}`),
   approveCelebrityApplication: (id: string) => req(`/admin/celebrity-applications/${id}/approve`, { method: 'POST' }),
   rejectCelebrityApplication: (id: string, note: string) => req(`/admin/celebrity-applications/${id}/reject`, { method: 'POST', body: JSON.stringify({ note }) }),
-  getMyCelebrityProfile: () => req('/admin/celebrity/profile'),
+  getMyCelebrityProfile: () => req<{ success: boolean; data: Record<string, unknown>; templates: CelebrityPortalTemplate[] }>('/admin/celebrity/profile'),
   saveMyCelebrityProfile: (body: object) => req('/admin/celebrity/profile', { method: 'PUT', body: JSON.stringify(body) }),
 
   getSettings:    () => req('/admin/settings'),
