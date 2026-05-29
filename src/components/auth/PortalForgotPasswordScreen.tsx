@@ -1,9 +1,9 @@
 'use client'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { ArrowLeft, CheckCircle, KeyRound, Mail, Shield, Sparkles } from 'lucide-react'
-import { adminApi, type PortalMode } from '@/lib/api'
+import { adminApi, setPortalMode, type PortalMode } from '@/lib/api'
 
 const MODE_COPY: Record<PortalMode, { eyebrow: string; title: string; subtitle: string; helper: string[] }> = {
   admin: {
@@ -26,6 +26,16 @@ const MODE_COPY: Record<PortalMode, { eyebrow: string; title: string; subtitle: 
       'Return to profile completion after sign in',
     ],
   },
+  manager: {
+    eyebrow: 'Manager portal',
+    title: 'Recover your manager portal access',
+    subtitle: 'Use your manager email address and we will send you a secure reset link so you can get back into your workspace.',
+    helper: [
+      'Use the manager email assigned by Twinity',
+      'Secure reset link expires in 1 hour',
+      'Best for external manager accounts',
+    ],
+  },
 }
 
 export default function PortalForgotPasswordScreen({ mode }: { mode: PortalMode }) {
@@ -36,12 +46,16 @@ export default function PortalForgotPasswordScreen({ mode }: { mode: PortalMode 
   const [sent, setSent] = useState(false)
   const [error, setError] = useState('')
 
+  useEffect(() => {
+    setPortalMode(mode)
+  }, [mode])
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true)
     setError('')
     try {
-      await adminApi.forgotPassword({ email })
+      await adminApi.forgotPassword({ email }, mode)
       setSent(true)
     } catch (err: any) {
       setError(err.message || 'Something went wrong. Please try again.')
@@ -50,7 +64,7 @@ export default function PortalForgotPasswordScreen({ mode }: { mode: PortalMode 
     }
   }
 
-  const backHref = isCelebrityMode ? '/celebrity-login' : '/login'
+  const backHref = mode === 'celebrity' ? '/celebrity-login' : mode === 'manager' ? '/manager-login' : '/login'
 
   return (
     <div className="min-h-screen flex flex-col lg:flex-row">
@@ -127,7 +141,9 @@ export default function PortalForgotPasswordScreen({ mode }: { mode: PortalMode 
                 <p className="mt-1.5 text-sm text-content-muted">
                   {isCelebrityMode
                     ? 'Enter your approved celebrity portal email address and we will send you a reset link.'
-                    : 'Enter your admin email address and we will send you a reset link.'}
+                    : mode === 'manager'
+                      ? 'Enter your manager portal email address and we will send you a reset link.'
+                      : 'Enter your admin email address and we will send you a reset link.'}
                 </p>
               </div>
 
@@ -158,7 +174,7 @@ export default function PortalForgotPasswordScreen({ mode }: { mode: PortalMode 
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                         required
-                        placeholder={isCelebrityMode ? 'your approved email' : 'admin@twinity.ai'}
+                        placeholder={mode === 'celebrity' ? 'your approved email' : mode === 'manager' ? 'manager@agency.com' : 'admin@twinity.ai'}
                         className="w-full rounded-xl border border-brand-purple/20 bg-white py-2.5 pl-10 pr-4 text-sm text-content-primary outline-none transition-all placeholder:text-content-muted focus:border-brand-purple focus:shadow-[0_0_0_3px_rgba(154,120,254,0.12)]"
                       />
                     </div>

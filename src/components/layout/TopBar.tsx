@@ -12,6 +12,8 @@ const TITLES: Record<string, string> = {
   '/settings':    'Settings',
   '/team':        'Team',
   '/roles':       'Roles',
+  '/manager/dashboard': 'Manager Dashboard',
+  '/manager/requests': 'Manager Requests',
   '/celebrity-applications': 'Celebrity Applications',
   '/celebrity/profile': 'My Profile',
   '/celebrity/orders': 'My Orders',
@@ -31,7 +33,7 @@ export default function TopBar({ sidebarOpen, sidebarCollapsed, onMobileToggle, 
 
   function logout() {
     clearAdminToken()
-    router.push(getPortalMode() === 'celebrity' ? '/celebrity-login' : '/login')
+    router.push(getPortalMode() === 'celebrity' ? '/celebrity-login' : getPortalMode() === 'manager' ? '/manager-login' : '/login')
   }
 
   return (
