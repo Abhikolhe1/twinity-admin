@@ -15,6 +15,7 @@ const STATUS_COLORS: Record<string, string> = {
   cancelled:    'bg-surface-subtle text-content-muted',
 }
 const STATUSES = ['pending', 'in-progress', 'review', 'delivered', 'failed', 'cancelled']
+const toUiStatus = (status?: string) => status === 'in_progress' ? 'in-progress' : status || 'pending'
 
 const fmt = (d: string) =>
   d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
@@ -342,6 +343,7 @@ export default function VideosPage() {
   const [enablingDownload, setEnablingDownload] = useState<Set<string>>(new Set())
   const [reviewJob, setReviewJob] = useState<any | null>(null)
   const [setPreviewJob, setSetPreviewJob] = useState<any | null>(null)
+  const [statusError, setStatusError] = useState('')
   const permissions = usePermissions()
   const canManage = permissions.includes('videos.manage')
 
@@ -351,7 +353,7 @@ export default function VideosPage() {
     if (statusFilter !== 'all') params.set('status', statusFilter)
     adminApi.jobs(params.toString())
       .then((res: any) => {
-        setJobs(res.data || [])
+        setJobs((res.data || []).map((job: any) => ({ ...job, status: toUiStatus(job.status) })))
         setTotal(res.total || 0)
       })
       .catch(() => null)
@@ -369,11 +371,17 @@ export default function VideosPage() {
 
   async function updateStatus(id: string, status: string) {
     if (updatingStatus.has(id)) return
+    setStatusError('')
     setUpdatingStatus(prev => new Set(prev).add(id))
     try {
-      await adminApi.updateJobStatus(id, { status })
-      setJobs(prev => prev.map(j => j.id === id ? { ...j, status } : j))
-    } catch {}
+      const res: any = await adminApi.updateJobStatus(id, { status })
+      const updatedJob = res?.data
+      setJobs(prev => prev.map(j => j.id === id
+        ? { ...j, ...(updatedJob || {}), status: toUiStatus(updatedJob?.status || status) }
+        : j))
+    } catch (err: any) {
+      setStatusError(err.message || 'Status update failed')
+    }
     setUpdatingStatus(prev => { const s = new Set(prev); s.delete(id); return s })
   }
 
@@ -410,6 +418,12 @@ export default function VideosPage() {
         <h1 className="text-2xl font-bold text-content-primary">Video Jobs</h1>
         <p className="text-sm text-content-muted mt-1">{total} total jobs</p>
       </div>
+
+      {statusError && (
+        <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {statusError}
+        </div>
+      )}
 
       <div className="flex flex-wrap gap-3 mb-5">
         <div className="relative">

@@ -52,12 +52,30 @@ const MODE_CONTENT: Record<PortalMode, LoginModeContent> = {
     emailPlaceholder: 'your approved email',
     forgotHref: '/celebrity-forgot-password',
   },
+  manager: {
+    eyebrow: 'Manager portal sign in',
+    title: 'Manage your celebrity roster',
+    subtitle: 'Sign in to review requests, track SLA risk, and manage template approvals for your linked celebrities.',
+    stats: [
+      { val: 'Multi', label: 'Celebrities' },
+      { val: 'Live', label: 'Request Queue' },
+      { val: '24/7', label: 'SLA Visibility' },
+    ],
+    chips: [
+      { icon: Users, label: 'Portfolio View', color: 'text-violet-300' },
+      { icon: Film, label: 'Request Queue', color: 'text-sky-300' },
+      { icon: Shield, label: 'Approvals', color: 'text-emerald-300' },
+    ],
+    emailPlaceholder: 'manager@agency.com',
+    forgotHref: '/manager-forgot-password',
+  },
 }
 
 export default function PortalLoginScreen({ mode }: { mode: PortalMode }) {
   const router = useRouter()
   const content = MODE_CONTENT[mode]
-  const [email, setEmail] = useState(mode === 'celebrity' ? '' : 'admin@twinity.ai')
+  const defaultEmail = mode === 'admin' ? 'admin@twinity.ai' : ''
+  const [email, setEmail] = useState(defaultEmail)
   const [password, setPassword] = useState('')
   const [showPw, setShowPw] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -65,15 +83,15 @@ export default function PortalLoginScreen({ mode }: { mode: PortalMode }) {
 
   useEffect(() => {
     setPortalMode(mode)
-    setEmail(mode === 'celebrity' ? '' : 'admin@twinity.ai')
+    setEmail(mode === 'admin' ? 'admin@twinity.ai' : '')
     setPassword('')
     setError('')
   }, [mode])
 
   useEffect(() => {
     if (!getAdminToken(mode)) return
-    adminApi.me()
-      .then((res: any) => router.replace(res.data?.celebrity_id ? '/celebrity/profile' : '/'))
+    adminApi.me(mode)
+      .then((res: any) => router.replace(mode === 'manager' ? '/manager/dashboard' : res.data?.celebrity_id ? '/celebrity/profile' : '/'))
       .catch(() => {})
   }, [mode, router])
 
@@ -82,10 +100,14 @@ export default function PortalLoginScreen({ mode }: { mode: PortalMode }) {
     setLoading(true)
     setError('')
     try {
-      const res = await adminApi.login({ email, password }) as any
-      const resolvedMode: PortalMode = res.admin?.celebrity_id ? 'celebrity' : 'admin'
+      const res = await adminApi.login({ email, password }, mode) as any
+      const resolvedMode: PortalMode = res.manager
+        ? 'manager'
+        : res.admin?.celebrity_id
+          ? 'celebrity'
+          : 'admin'
       setAdminToken(res.token, resolvedMode)
-      router.push(resolvedMode === 'celebrity' ? '/celebrity/profile' : '/')
+      router.push(resolvedMode === 'manager' ? '/manager/dashboard' : resolvedMode === 'celebrity' ? '/celebrity/profile' : '/')
     } catch (err: any) {
       setError(err.message || 'Invalid credentials')
     } finally {
@@ -167,7 +189,9 @@ export default function PortalLoginScreen({ mode }: { mode: PortalMode }) {
             <p className="text-sm text-content-muted mt-1.5">
               {mode === 'celebrity'
                 ? 'Enter your approved celebrity portal credentials to access your workspace.'
-                : 'Enter your credentials to access the Twinity admin portal.'}
+                : mode === 'manager'
+                  ? 'Enter your manager credentials to access the Twinity manager portal.'
+                  : 'Enter your credentials to access the Twinity admin portal.'}
             </p>
           </div>
 

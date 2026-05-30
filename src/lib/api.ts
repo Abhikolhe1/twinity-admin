@@ -3,13 +3,14 @@ const BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api'
 let adminToken: string | null = null
 let activePortalMode: PortalMode = 'admin'
 
-export type PortalMode = 'admin' | 'celebrity'
+export type PortalMode = 'admin' | 'celebrity' | 'manager'
 
 const PORTAL_MODE_KEY = 'twinity_portal_mode'
 const TOKEN_KEY_PREFIX = 'twinity_portal_token_'
 
 function normalizePortalMode(value?: string | null): PortalMode {
-  return value === 'celebrity' ? 'celebrity' : 'admin'
+  if (value === 'celebrity' || value === 'manager') return value
+  return 'admin'
 }
 
 function getTokenStorageKey(mode: PortalMode): string {
@@ -61,12 +62,15 @@ export type AdminSession = {
   id: string
   name: string
   email: string
-  role: string
+  role?: string
   role_id?: string | null
   celebrity_id?: string | null
+  manager_id?: string | null
   is_active?: boolean
   must_change_password?: boolean
   profile_completed?: boolean
+  agency_name?: string | null
+  phone?: string | null
   celebrity?: {
     id: string
     name: string
@@ -102,6 +106,93 @@ export type CelebrityPortalTemplate = {
   duration: string
 }
 
+export type ManagerDashboardOverview = {
+  summary: {
+    totalCelebrities: number
+    totalRequests: number
+    pendingRequests: number
+    reviewRequests: number
+    breachedRequests: number
+    fastTrackRequests: number
+  }
+  portfolio: Array<{
+    id: string
+    name: string
+    industry: string
+    is_active: boolean
+    onboarding_status: string
+    total_orders: number
+    thumbnail_url?: string | null
+    pendingCount: number
+    reviewCount: number
+    deliveredCount: number
+    breachedCount: number
+    slaHours: number
+    preapprovedTemplateCount: number
+  }>
+  alerts: Array<{
+    referenceId: string
+    celebrityId: string
+    celebrityName: string
+    purpose: string
+    status: string
+    approvalPath?: string | null
+    slaHours: number
+    slaState: 'due_soon' | 'breached'
+    createdAt: string
+  }>
+}
+
+export type ManagerDashboardRequest = {
+  id: string
+  reference_id: string
+  celebrity_id: string
+  product_type: string
+  purpose: string
+  status: string
+  approval_path?: string | null
+  estimated_price: number
+  currency: string
+  created_at: string
+  updated_at: string
+  delivered_at?: string | null
+  celebrity?: {
+    id: string
+    name: string
+    thumbnail_url?: string | null
+  }
+  user?: {
+    id: string
+    name: string
+    email: string
+    company?: string | null
+  }
+  slaHours: number
+  slaState: 'on_track' | 'due_soon' | 'breached' | 'completed'
+  slaDueAt: string
+}
+
+export type ManagerDashboardTemplate = {
+  id: string
+  name: string
+  purpose: string
+  duration: string
+  product_types: string[]
+}
+
+export type ManagerDashboardCelebrityTemplates = {
+  id: string
+  name: string
+  industry: string
+  is_active: boolean
+  onboarding_status: string
+  total_orders: number
+  thumbnail_url?: string | null
+  slaHours: number
+  preapproved_template_ids: string[]
+  preapprovedTemplates: ManagerDashboardTemplate[]
+}
+
 async function req<T>(path: string, options?: RequestInit): Promise<T> {
   const mode = getPortalMode()
   const token = getAdminToken(mode)
@@ -124,10 +215,18 @@ async function req<T>(path: string, options?: RequestInit): Promise<T> {
   return data
 }
 
+function getAuthPrefix(mode: PortalMode): '/admin' | '/manager' {
+  return mode === 'manager' ? '/manager' : '/admin'
+}
+
+function getDashboardPrefix(mode: PortalMode): '/manager/dashboard' | '/admin/manager-dashboard' {
+  return mode === 'manager' ? '/manager/dashboard' : '/admin/manager-dashboard'
+}
+
 export const adminApi = {
-  login:           (body: object) => req('/admin/login', { method: 'POST', body: JSON.stringify(body) }),
-  forgotPassword:  (body: object) => req('/admin/forgot-password', { method: 'POST', body: JSON.stringify(body) }),
-  resetPassword:   (token: string, body: object) => req(`/admin/reset-password/${token}`, { method: 'POST', body: JSON.stringify(body) }),
+  login:           (body: object, mode: PortalMode = getPortalMode()) => req(`${getAuthPrefix(mode)}/login`, { method: 'POST', body: JSON.stringify(body) }),
+  forgotPassword:  (body: object, mode: PortalMode = getPortalMode()) => req(`${getAuthPrefix(mode)}/forgot-password`, { method: 'POST', body: JSON.stringify(body) }),
+  resetPassword:   (token: string, body: object, mode: PortalMode = getPortalMode()) => req(`${getAuthPrefix(mode)}/reset-password/${token}`, { method: 'POST', body: JSON.stringify(body) }),
   dashboard:      () => req('/admin/dashboard'),
   users:          (params = '') => req(`/admin/users?${params}`),
   getUser:        (id: string) => req(`/admin/users/${id}`),
@@ -166,9 +265,13 @@ export const adminApi = {
   revisions:      (params = '') => req(`/jobs/admin/revisions?${params}`),
   setPreviewUrl:  (id: string, watermarked_url: string) => req(`/jobs/admin/${id}/set-preview`, { method: 'POST', body: JSON.stringify({ watermarked_url }) }),
   celebrityJobs:  (params = '') => req(`/jobs/celebrity/my${params ? `?${params}` : ''}`),
+  celebrityApproveJob: (id: string) => req(`/jobs/celebrity/my/${id}/approve`, { method: 'POST' }),
+  celebrityRejectJob: (id: string, note: string) => req(`/jobs/celebrity/my/${id}/reject`, { method: 'POST', body: JSON.stringify({ note }) }),
   updateJobStatus:(id: string, body: object) => req(`/jobs/admin/${id}/status`, { method: 'PATCH', body: JSON.stringify(body) }),
   approveJob:     (id: string) => req(`/jobs/admin/${id}/approve`, { method: 'POST' }),
   rejectJob:      (id: string, note: string) => req(`/jobs/admin/${id}/reject`, { method: 'POST', body: JSON.stringify({ note }) }),
+  managerApproveJob: (id: string) => req(`/jobs/manager/${id}/approve`, { method: 'POST' }),
+  managerRejectJob: (id: string, note: string) => req(`/jobs/manager/${id}/reject`, { method: 'POST', body: JSON.stringify({ note }) }),
   enableDownload: (id: string) => req(`/jobs/admin/${id}/enable-download`, { method: 'PATCH' }),
 
   leads:          (params = '') => req(`/leads/admin?${params}`),
@@ -176,7 +279,7 @@ export const adminApi = {
   getLead:        (id: string) => req(`/leads/admin/${id}`),
   updateLead:     (id: string, body: object) => req(`/leads/admin/${id}/status`, { method: 'PATCH', body: JSON.stringify(body) }),
 
-  me:             () => req<{ success: boolean; data: AdminSession; permissions: string[] }>('/admin/me'),
+  me:             (mode: PortalMode = getPortalMode()) => req<{ success: boolean; data: AdminSession; permissions: string[] }>(`${getAuthPrefix(mode)}/me`),
   celebrityApplications: (params = '') => req<{ success: boolean; data: CelebrityApplication[]; total: number; page: number; pages: number }>(`/admin/celebrity-applications${params ? `?${params}` : ''}`),
   approveCelebrityApplication: (id: string) => req(`/admin/celebrity-applications/${id}/approve`, { method: 'POST' }),
   rejectCelebrityApplication: (id: string, note: string) => req(`/admin/celebrity-applications/${id}/reject`, { method: 'POST', body: JSON.stringify({ note }) }),
@@ -214,6 +317,14 @@ export const adminApi = {
   createMember:   (body: object) => req('/admin/team', { method: 'POST', body: JSON.stringify(body) }),
   updateMember:   (id: string, body: object) => req(`/admin/team/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
   deleteMember:   (id: string) => req(`/admin/team/${id}`, { method: 'DELETE' }),
+
+  managers:       () => req<{ success: boolean; data: Array<AdminSession & { celebrity_links?: Array<{ celebrity: { id: string; name: string }; permissions: string[] }> }> }>('/admin/celebrity-managers/managers'),
+  createManager:  (body: object) => req('/admin/celebrity-managers/managers', { method: 'POST', body: JSON.stringify(body) }),
+  managerDashboardOverview: (mode: PortalMode = getPortalMode()) => req<{ success: boolean } & ManagerDashboardOverview>(`${getDashboardPrefix(mode)}/overview`),
+  managerDashboardRequests: (params = '', mode: PortalMode = getPortalMode()) => req<{ success: boolean; data: ManagerDashboardRequest[]; total: number; page: number; pages: number }>(`${getDashboardPrefix(mode)}/requests${params ? `?${params}` : ''}`),
+  managerDashboardTemplates: (mode: PortalMode = getPortalMode()) => req<{ success: boolean; data: ManagerDashboardCelebrityTemplates[]; templates: ManagerDashboardTemplate[] }>(`${getDashboardPrefix(mode)}/templates`),
+  updateManagerDashboardTemplates: (celebrityId: string, templateIds: string[], mode: PortalMode = getPortalMode()) => req(`${getDashboardPrefix(mode)}/templates/${celebrityId}`, { method: 'PATCH', body: JSON.stringify({ templateIds }) }),
+  managerDashboardAuditLogs: (params = '', mode: PortalMode = getPortalMode()) => req<{ success: boolean; logs: any[]; total: number; page: number; pages: number }>(`${getDashboardPrefix(mode)}/audit-logs${params ? `?${params}` : ''}`),
 
   templates:      (params = '') => req(`/templates/admin?${params}`),
   createTemplate: (body: object) => req('/templates', { method: 'POST', body: JSON.stringify(body) }),

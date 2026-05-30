@@ -16,6 +16,8 @@ const ROUTE_PERMISSIONS: { prefix: string; permission: string }[] = [
   { prefix: '/videos',             permission: 'videos.view' },
   { prefix: '/leads',              permission: 'leads.view' },
   { prefix: '/templates',          permission: 'templates.view' },
+  { prefix: '/manager/dashboard',  permission: 'manager.dashboard.view' },
+  { prefix: '/manager/requests',   permission: 'manager.dashboard.view' },
   { prefix: '/team',               permission: 'team.view' },
   { prefix: '/roles',              permission: 'roles.view' },
   { prefix: '/settings',           permission: 'settings.view' },
@@ -32,7 +34,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [adminData, setAdminData] = useState<AdminSession | null>(null)
   const [ready, setReady] = useState(false)
 
-  const loginHref = getPortalMode() === 'celebrity' ? '/celebrity-login' : '/login'
+  const loginHref = getPortalMode() === 'celebrity' ? '/celebrity-login' : getPortalMode() === 'manager' ? '/manager-login' : '/login'
 
   useEffect(() => {
     if (!getAdminToken()) { router.replace(loginHref); return }

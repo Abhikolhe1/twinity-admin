@@ -21,6 +21,7 @@ const NAV = [
 ]
 
 const ADMIN_NAV = [
+  { href: '/manager/dashboard',   label: 'Manager Desk',       icon: LayoutDashboard, permission: 'manager.dashboard.view' },
   { href: '/team',                label: 'Team',               icon: Users2,      permission: 'team.view' },
   { href: '/roles',               label: 'Roles',              icon: ShieldCheck, permission: 'roles.view' },
   { href: '/celebrity-managers',  label: 'Celeb. Managers',   icon: Link2,       permission: 'celebrity_managers.view' },
@@ -45,7 +46,7 @@ export default function Sidebar({ open, collapsed, onClose }: SidebarProps) {
 
   function logout() {
     clearAdminToken()
-    router.push(getPortalMode() === 'celebrity' ? '/celebrity-login' : '/login')
+    router.push(getPortalMode() === 'celebrity' ? '/celebrity-login' : getPortalMode() === 'manager' ? '/manager-login' : '/login')
   }
 
   return (
