@@ -1,5 +1,5 @@
-import PortalForgotPasswordScreen from '@/components/auth/PortalForgotPasswordScreen'
+import { redirect } from 'next/navigation'
 
 export default function CelebrityForgotPasswordPage() {
-  return <PortalForgotPasswordScreen mode="celebrity" />
+  redirect('/forgot-password')
 }

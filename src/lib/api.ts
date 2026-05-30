@@ -193,6 +193,36 @@ export type ManagerDashboardCelebrityTemplates = {
   preapprovedTemplates: ManagerDashboardTemplate[]
 }
 
+export type AdminRefundRequest = {
+  id: string
+  status: 'requested' | 'approved' | 'rejected' | 'processed' | 'partial'
+  reason: string
+  requested_amount?: number | null
+  approved_amount?: number | null
+  currency: string
+  admin_note?: string | null
+  requested_at: string
+  decision_at?: string | null
+  processed_at?: string | null
+  payment_gateway?: string | null
+  payment_reference?: string | null
+  user: { id: string; name: string; email: string }
+  decision_admin?: { id: string; name: string; email: string } | null
+  video_job: {
+    id: string
+    reference_id: string
+    status: string
+    estimated_price: number
+    currency: string
+    purpose: string
+    product_type: string
+    created_at: string
+    error_message?: string | null
+    celebrity: { id: string; name: string }
+    user: { id: string; name: string; email: string }
+  }
+}
+
 async function req<T>(path: string, options?: RequestInit): Promise<T> {
   const mode = getPortalMode()
   const token = getAdminToken(mode)
@@ -224,8 +254,8 @@ function getDashboardPrefix(mode: PortalMode): '/manager/dashboard' | '/admin/ma
 }
 
 export const adminApi = {
-  login:           (body: object, mode: PortalMode = getPortalMode()) => req(`${getAuthPrefix(mode)}/login`, { method: 'POST', body: JSON.stringify(body) }),
-  forgotPassword:  (body: object, mode: PortalMode = getPortalMode()) => req(`${getAuthPrefix(mode)}/forgot-password`, { method: 'POST', body: JSON.stringify(body) }),
+  login: (body: object, _mode?: PortalMode) => req(`/admin/login`, { method: 'POST', body: JSON.stringify(body) }),
+  forgotPassword: (body: { email: string }, _mode?: PortalMode) => req(`/admin/forgot-password`, { method: 'POST', body: JSON.stringify(body) }),
   resetPassword:   (token: string, body: object, mode: PortalMode = getPortalMode()) => req(`${getAuthPrefix(mode)}/reset-password/${token}`, { method: 'POST', body: JSON.stringify(body) }),
   dashboard:      () => req('/admin/dashboard'),
   users:          (params = '') => req(`/admin/users?${params}`),
@@ -264,6 +294,11 @@ export const adminApi = {
   jobs:           (params = '') => req(`/jobs/admin?${params}`),
   revisions:      (params = '') => req(`/jobs/admin/revisions?${params}`),
   setPreviewUrl:  (id: string, watermarked_url: string) => req(`/jobs/admin/${id}/set-preview`, { method: 'POST', body: JSON.stringify({ watermarked_url }) }),
+  refunds:        (params = '') => req<{ success: boolean; data: AdminRefundRequest[]; total: number }>(`/jobs/admin/refunds${params ? `?${params}` : ''}`),
+  getRefund:      (id: string) => req<{ success: boolean; data: AdminRefundRequest }>(`/jobs/admin/refunds/${id}`),
+  approveRefund:  (id: string, body: { approvedAmount?: number; note?: string }) => req<{ success: boolean; data: AdminRefundRequest }>(`/jobs/admin/refunds/${id}/approve`, { method: 'POST', body: JSON.stringify(body) }),
+  rejectRefund:   (id: string, note: string) => req<{ success: boolean; data: AdminRefundRequest }>(`/jobs/admin/refunds/${id}/reject`, { method: 'POST', body: JSON.stringify({ note }) }),
+  processRefund:  (id: string, body: { paymentGateway?: string; paymentReference?: string; note?: string }) => req<{ success: boolean; data: AdminRefundRequest }>(`/jobs/admin/refunds/${id}/process`, { method: 'POST', body: JSON.stringify(body) }),
   celebrityJobs:  (params = '') => req(`/jobs/celebrity/my${params ? `?${params}` : ''}`),
   celebrityApproveJob: (id: string) => req(`/jobs/celebrity/my/${id}/approve`, { method: 'POST' }),
   celebrityRejectJob: (id: string, note: string) => req(`/jobs/celebrity/my/${id}/reject`, { method: 'POST', body: JSON.stringify({ note }) }),

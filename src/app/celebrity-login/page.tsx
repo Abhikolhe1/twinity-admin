@@ -1,5 +1,5 @@
-import PortalLoginScreen from '@/components/auth/PortalLoginScreen'
+import { redirect } from 'next/navigation'
 
 export default function CelebrityLoginPage() {
-  return <PortalLoginScreen mode="celebrity" />
+  redirect('/login')
 }

@@ -2,7 +2,7 @@
 import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname, useRouter } from 'next/navigation'
-import { LayoutDashboard, Users, Star, Film, PhoneCall, Settings, LogOut, ShieldCheck, Users2, FileText, ShieldAlert, Layers, ClipboardList, UserCircle2, Link2, ScrollText, RefreshCw } from 'lucide-react'
+import { LayoutDashboard, Users, Star, Film, PhoneCall, Settings, LogOut, ShieldCheck, Users2, FileText, ShieldAlert, Layers, ClipboardList, UserCircle2, Link2, ScrollText, RefreshCw, Wallet } from 'lucide-react'
 import { clearAdminToken, getPortalMode } from '@/lib/api'
 import { usePermissions } from '@/lib/permissions-context'
 
@@ -12,6 +12,7 @@ const NAV = [
   { href: '/celebrities', label: 'Celebrities', icon: Star,            permission: 'celebrities.view' },
   { href: '/videos',      label: 'Video Jobs',  icon: Film,            permission: 'videos.view' },
   { href: '/videos/revisions', label: 'Revisions',  icon: RefreshCw,  permission: 'videos.view' },
+  { href: '/refunds',     label: 'Refunds',     icon: Wallet,          permission: 'videos.view' },
   { href: '/leads',       label: 'Leads / CRM', icon: PhoneCall,       permission: 'leads.view' },
   { href: '/templates',     label: 'Templates',     icon: FileText, permission: 'templates.view' },
   { href: '/product-types', label: 'Product Types', icon: Layers,   permission: 'settings.view' },
@@ -40,9 +41,19 @@ export default function Sidebar({ open, collapsed, onClose }: SidebarProps) {
   const pathname = usePathname()
   const router = useRouter()
   const permissions = usePermissions()
+  const portalMode = getPortalMode()
 
-  const visibleNav = NAV.filter(item => permissions.includes(item.permission))
-  const visibleAdminNav = ADMIN_NAV.filter(item => permissions.includes(item.permission))
+  const visibleNav = NAV.filter(item => {
+    if (!permissions.includes(item.permission)) return false
+    if (portalMode === 'admin' && item.href.startsWith('/celebrity/')) return false
+    return true
+  })
+
+  const visibleAdminNav = ADMIN_NAV.filter(item => {
+    if (!permissions.includes(item.permission)) return false
+    if (portalMode === 'admin' && item.href.startsWith('/manager/')) return false
+    return true
+  })
 
   function logout() {
     clearAdminToken()

@@ -33,7 +33,7 @@ export default function ResetPasswordPage() {
     try {
       await adminApi.resetPassword(token, { password }, mode)
       setDone(true)
-      setTimeout(() => router.replace(mode === 'celebrity' ? '/celebrity-login' : mode === 'manager' ? '/manager-login' : '/login'), 3000)
+      setTimeout(() => router.replace('/login'), 3000)
     } catch (err: any) {
       setError(err.message || 'Invalid or expired reset link.')
     } finally {
@@ -66,10 +66,10 @@ export default function ResetPasswordPage() {
         ) : (
           <>
             <div className="mb-8">
-              <p className="text-xs font-bold text-brand-purple uppercase tracking-widest mb-2">{mode === 'celebrity' ? 'Celebrity portal' : mode === 'manager' ? 'Manager portal' : 'Admin panel'}</p>
+              <p className="text-xs font-bold text-brand-purple uppercase tracking-widest mb-2">Twinity Portal</p>
               <h2 className="text-2xl font-bold text-content-primary">Set new password</h2>
               <p className="text-sm text-content-muted mt-1.5">
-                Choose a strong password for your {mode === 'celebrity' ? 'celebrity' : mode === 'manager' ? 'manager' : 'admin'} account.
+                Choose a strong password for your portal account to regain access.
               </p>
             </div>
 
@@ -139,7 +139,7 @@ export default function ResetPasswordPage() {
 
             <div className="mt-6 text-center">
               <Link
-                href={mode === 'celebrity' ? '/celebrity-login' : mode === 'manager' ? '/manager-login' : '/login'}
+                href="/login"
                 className="text-sm text-content-muted hover:text-brand-purple transition-colors"
               >
                 Back to sign in

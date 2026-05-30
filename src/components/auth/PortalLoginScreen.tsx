@@ -4,7 +4,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { BarChart3, Eye, EyeOff, Film, Lock, Mail, PhoneCall, Shield, Users } from 'lucide-react'
-import { adminApi, getAdminToken, setAdminToken, setPortalMode, type PortalMode } from '@/lib/api'
+import { adminApi, getAdminToken, getPortalMode, setAdminToken, setPortalMode, type PortalMode } from '@/lib/api'
 
 type LoginModeContent = {
   eyebrow: string
@@ -16,7 +16,24 @@ type LoginModeContent = {
   forgotHref: string
 }
 
-const MODE_CONTENT: Record<PortalMode, LoginModeContent> = {
+const MODE_CONTENT: Record<PortalMode | 'portal', LoginModeContent> = {
+  portal: {
+    eyebrow: 'Twinity Portal',
+    title: 'Access your Twinity workspace',
+    subtitle: 'One secure place to manage your platform, roster, or celebrity presence.',
+    stats: [
+      { val: '150+', label: 'Celebrities' },
+      { val: '10K+', label: 'Videos Made' },
+      { val: '24/7', label: 'Global Access' },
+    ],
+    chips: [
+      { icon: Users, label: 'Role Management', color: 'text-violet-300' },
+      { icon: Shield, label: 'Secure Access', color: 'text-sky-300' },
+      { icon: Lock, label: 'Data Privacy', color: 'text-emerald-300' },
+    ],
+    emailPlaceholder: 'Enter your email',
+    forgotHref: '/forgot-password',
+  },
   admin: {
     eyebrow: 'Admin sign in',
     title: 'Manage your platform with full control',
@@ -71,43 +88,48 @@ const MODE_CONTENT: Record<PortalMode, LoginModeContent> = {
   },
 }
 
-export default function PortalLoginScreen({ mode }: { mode: PortalMode }) {
+export default function PortalLoginScreen({ mode = 'portal' }: { mode?: PortalMode | 'portal' }) {
   const router = useRouter()
   const content = MODE_CONTENT[mode]
-  const defaultEmail = mode === 'admin' ? 'admin@twinity.ai' : ''
-  const [email, setEmail] = useState(defaultEmail)
+  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPw, setShowPw] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
   useEffect(() => {
-    setPortalMode(mode)
-    setEmail(mode === 'admin' ? 'admin@twinity.ai' : '')
-    setPassword('')
-    setError('')
+    if (mode !== 'portal') {
+      setPortalMode(mode)
+    }
   }, [mode])
 
   useEffect(() => {
-    if (!getAdminToken(mode)) return
-    adminApi.me(mode)
-      .then((res: any) => router.replace(mode === 'manager' ? '/manager/dashboard' : res.data?.celebrity_id ? '/celebrity/profile' : '/'))
-      .catch(() => {})
-  }, [mode, router])
+    const checkAuth = async () => {
+      // If we have a token for any mode, try to use it
+      const currentMode = getPortalMode()
+      if (!getAdminToken(currentMode)) return
+
+      try {
+        const res = await adminApi.me(currentMode)
+        const resolvedMode: PortalMode = res.data?.manager_id ? 'manager' : res.data?.celebrity_id ? 'celebrity' : 'admin'
+        router.replace(resolvedMode === 'manager' ? '/manager/dashboard' : resolvedMode === 'celebrity' ? '/celebrity/profile' : '/')
+      } catch {
+        // Token invalid, stay on login
+      }
+    }
+    checkAuth()
+  }, [router])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true)
     setError('')
     try {
-      const res = await adminApi.login({ email, password }, mode) as any
-      const resolvedMode: PortalMode = res.manager
-        ? 'manager'
-        : res.admin?.celebrity_id
-          ? 'celebrity'
-          : 'admin'
+      // Use the admin login endpoint as the unified one
+      const res = await adminApi.login({ email, password }, 'admin') as any
+      const resolvedMode: PortalMode = res.role
       setAdminToken(res.token, resolvedMode)
-      router.push(resolvedMode === 'manager' ? '/manager/dashboard' : resolvedMode === 'celebrity' ? '/celebrity/profile' : '/')
+      router.push(res.redirect || '/')
     } catch (err: any) {
       setError(err.message || 'Invalid credentials')
     } finally {
@@ -191,7 +213,9 @@ export default function PortalLoginScreen({ mode }: { mode: PortalMode }) {
                 ? 'Enter your approved celebrity portal credentials to access your workspace.'
                 : mode === 'manager'
                   ? 'Enter your manager credentials to access the Twinity manager portal.'
-                  : 'Enter your credentials to access the Twinity admin portal.'}
+                  : mode === 'admin'
+                    ? 'Enter your credentials to access the Twinity admin portal.'
+                    : 'Enter your credentials to access your Twinity workspace.'}
             </p>
           </div>
 
