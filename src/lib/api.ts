@@ -163,6 +163,8 @@ export const adminApi = {
   deleteCeleb:    (id: string) => req(`/celebrities/${id}`, { method: 'DELETE' }),
 
   jobs:           (params = '') => req(`/jobs/admin?${params}`),
+  revisions:      (params = '') => req(`/jobs/admin/revisions?${params}`),
+  setPreviewUrl:  (id: string, watermarked_url: string) => req(`/jobs/admin/${id}/set-preview`, { method: 'POST', body: JSON.stringify({ watermarked_url }) }),
   celebrityJobs:  (params = '') => req(`/jobs/celebrity/my${params ? `?${params}` : ''}`),
   updateJobStatus:(id: string, body: object) => req(`/jobs/admin/${id}/status`, { method: 'PATCH', body: JSON.stringify(body) }),
   approveJob:     (id: string) => req(`/jobs/admin/${id}/approve`, { method: 'POST' }),

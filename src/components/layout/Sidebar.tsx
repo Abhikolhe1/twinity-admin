@@ -2,7 +2,7 @@
 import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname, useRouter } from 'next/navigation'
-import { LayoutDashboard, Users, Star, Film, PhoneCall, Settings, LogOut, ShieldCheck, Users2, FileText, ShieldAlert, Layers, ClipboardList, UserCircle2, Link2, ScrollText } from 'lucide-react'
+import { LayoutDashboard, Users, Star, Film, PhoneCall, Settings, LogOut, ShieldCheck, Users2, FileText, ShieldAlert, Layers, ClipboardList, UserCircle2, Link2, ScrollText, RefreshCw } from 'lucide-react'
 import { clearAdminToken, getPortalMode } from '@/lib/api'
 import { usePermissions } from '@/lib/permissions-context'
 
@@ -11,6 +11,7 @@ const NAV = [
   { href: '/customers',   label: 'Customers',   icon: Users,           permission: 'users.view' },
   { href: '/celebrities', label: 'Celebrities', icon: Star,            permission: 'celebrities.view' },
   { href: '/videos',      label: 'Video Jobs',  icon: Film,            permission: 'videos.view' },
+  { href: '/videos/revisions', label: 'Revisions',  icon: RefreshCw,  permission: 'videos.view' },
   { href: '/leads',       label: 'Leads / CRM', icon: PhoneCall,       permission: 'leads.view' },
   { href: '/templates',     label: 'Templates',     icon: FileText, permission: 'templates.view' },
   { href: '/product-types', label: 'Product Types', icon: Layers,   permission: 'settings.view' },
