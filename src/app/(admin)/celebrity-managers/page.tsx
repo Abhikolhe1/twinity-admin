@@ -1,6 +1,7 @@
 'use client'
-import { useEffect, useRef, useState, useCallback } from 'react'
-import { Search, Link2, Link2Off, Plus, X, Shield, ChevronDown, Check } from 'lucide-react'
+import { Fragment, useEffect, useRef, useState, useCallback } from 'react'
+import { createPortal } from 'react-dom'
+import { Search, Link2, Link2Off, Plus, X, Shield, ChevronDown, Check, Eye, Pencil } from 'lucide-react'
 import { adminApi } from '@/lib/api'
 import Spinner, { PageLoader } from '@/components/ui/Spinner'
 import { useDebounce } from '@/lib/hooks'
@@ -28,6 +29,17 @@ type ManagerOption = {
   email: string
   phone?: string | null
   agency_name?: string | null
+  is_active?: boolean
+  celebrity_links?: Array<{
+    id: string
+    is_active: boolean
+    notes?: string | null
+    celebrity: {
+      id: string
+      name: string
+    }
+    permissions: string[]
+  }>
 }
 
 type ManagerLink = {
@@ -141,17 +153,19 @@ function AddLinkModal({
   managers,
   celebrities,
   initialCelebId,
+  initialManagerId,
   onSaved,
   onCancel,
 }: {
   managers: ManagerOption[]
   celebrities: CelebrityOption[]
   initialCelebId?: string
+  initialManagerId?: string
   onSaved: () => void
   onCancel: () => void
 }) {
-  const [mode, setMode] = useState<'existing' | 'new'>(managers.length ? 'existing' : 'new')
-  const [managerId, setManagerId] = useState('')
+  const [mode, setMode] = useState<'existing' | 'new'>(initialManagerId || managers.length ? 'existing' : 'new')
+  const [managerId, setManagerId] = useState(initialManagerId || '')
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [phone, setPhone] = useState('')
@@ -161,6 +175,10 @@ function AddLinkModal({
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+
+  function sanitizePhone(value: string) {
+    return value.replace(/\D/g, '')
+  }
 
   function toggleCelebrity(id: string) {
     setCelebrityIds((current) => current.includes(id) ? current.filter((value) => value !== id) : [...current, id])
@@ -185,6 +203,10 @@ function AddLinkModal({
     }
     if (mode === 'new' && (!name.trim() || !email.trim())) {
       setError('Manager name and email are required')
+      return
+    }
+    if (mode === 'new' && phone && !/^\d+$/.test(phone)) {
+      setError('Manager phone must contain digits only')
       return
     }
 
@@ -222,14 +244,16 @@ function AddLinkModal({
         </div>
 
         <div className="grid gap-4">
-          <div className="flex gap-2">
-            <button type="button" onClick={() => setMode('existing')} className={`px-4 py-2 rounded-xl text-sm font-semibold ${mode === 'existing' ? 'bg-brand-purple text-white' : 'border border-brand-purple/20 text-content-secondary'}`}>
-              Existing manager
-            </button>
-            <button type="button" onClick={() => setMode('new')} className={`px-4 py-2 rounded-xl text-sm font-semibold ${mode === 'new' ? 'bg-brand-purple text-white' : 'border border-brand-purple/20 text-content-secondary'}`}>
-              New manager
-            </button>
-          </div>
+          {!initialManagerId && (
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setMode('existing')} className={`px-4 py-2 rounded-xl text-sm font-semibold ${mode === 'existing' ? 'bg-brand-purple text-white' : 'border border-brand-purple/20 text-content-secondary'}`}>
+                Existing manager
+              </button>
+              <button type="button" onClick={() => setMode('new')} className={`px-4 py-2 rounded-xl text-sm font-semibold ${mode === 'new' ? 'bg-brand-purple text-white' : 'border border-brand-purple/20 text-content-secondary'}`}>
+                New manager
+              </button>
+            </div>
+          )}
 
           {mode === 'existing' ? (
             <div>
@@ -237,6 +261,7 @@ function AddLinkModal({
               <select
                 value={managerId}
                 onChange={(e) => setManagerId(e.target.value)}
+                disabled={Boolean(initialManagerId)}
                 className="w-full rounded-xl border border-brand-purple/20 px-3 py-2.5 text-sm text-content-primary outline-none focus:border-brand-purple"
               >
                 <option value="">Select manager</option>
@@ -259,7 +284,7 @@ function AddLinkModal({
               </div>
               <div>
                 <label className="block text-sm font-semibold text-content-primary mb-1.5">Phone</label>
-                <input value={phone} onChange={(e) => setPhone(e.target.value)} className="w-full rounded-xl border border-brand-purple/20 px-3 py-2.5 text-sm outline-none focus:border-brand-purple" />
+                <input value={phone} onChange={(e) => setPhone(sanitizePhone(e.target.value))} inputMode="numeric" className="w-full rounded-xl border border-brand-purple/20 px-3 py-2.5 text-sm outline-none focus:border-brand-purple" />
               </div>
               <div>
                 <label className="block text-sm font-semibold text-content-primary mb-1.5">Agency</label>
@@ -305,35 +330,77 @@ function AddLinkModal({
   )
 }
 
-function LinkRow({ link, onUpdated, canManage }: { link: ManagerLink; onUpdated: () => void; canManage: boolean }) {
-  const [expanded, setExpanded] = useState(false)
+function EditLinkModal({
+  link,
+  onClose,
+  onSaved,
+}: {
+  link: ManagerLink
+  onClose: () => void
+  onSaved: () => void
+}) {
   const [saving, setSaving] = useState(false)
   const [permissions, setPermissions] = useState<string[]>(link.permissions ?? [])
-  const [confirmRemoveOpen, setConfirmRemoveOpen] = useState(false)
 
   function togglePerm(permission: string) {
     setPermissions((current) => current.includes(permission) ? current.filter((value) => value !== permission) : [...current, permission])
-  }
-
-  async function handleToggleActive() {
-    setSaving(true)
-    try {
-      await adminApi.updateCelebrityManager(link.celebrity_id, link.id, { is_active: !link.is_active, permissions })
-      onUpdated()
-    } finally {
-      setSaving(false)
-    }
   }
 
   async function handleSavePermissions() {
     setSaving(true)
     try {
       await adminApi.updateCelebrityManager(link.celebrity_id, link.id, { permissions, is_active: link.is_active })
-      onUpdated()
+      onClose()
+      onSaved()
     } finally {
       setSaving(false)
     }
   }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
+      <div className="w-full max-w-xl rounded-2xl bg-white shadow-xl">
+        <div className="flex items-start justify-between border-b border-brand-purple/10 px-6 py-4">
+          <div>
+            <h2 className="text-lg font-bold text-content-primary">Edit Manager Permissions</h2>
+            <p className="mt-1 text-sm text-content-muted">
+              {link.manager?.name} for {link.celebrity?.name}
+            </p>
+          </div>
+          <button onClick={onClose} className="text-content-muted hover:text-content-primary">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="px-6 py-5">
+          <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-content-muted">Permissions</p>
+          <div className="flex flex-wrap gap-2">
+            {MANAGER_PERMISSIONS.map((permission) => (
+              <PermissionToggle key={permission} perm={permission} selected={permissions.includes(permission)} onChange={() => togglePerm(permission)} />
+            ))}
+          </div>
+          {link.notes && <p className="mt-4 text-sm text-content-muted">Notes: {link.notes}</p>}
+        </div>
+
+        <div className="flex gap-3 border-t border-brand-purple/10 px-6 py-4">
+          <button onClick={onClose} className="flex-1 px-4 py-2.5 rounded-xl border border-brand-purple/20 text-sm font-semibold text-content-secondary hover:bg-surface-subtle transition-colors">
+            Cancel
+          </button>
+          <button onClick={handleSavePermissions} disabled={saving} className="flex flex-1 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60" style={{ background: 'linear-gradient(135deg,#9a78fe,#422266)' }}>
+            {saving ? <Spinner size="sm" /> : <Shield className="w-4 h-4" />}
+            Save Changes
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function LinkRow({ link, onUpdated, canManage }: { link: ManagerLink; onUpdated: () => void; canManage: boolean }) {
+  const [saving, setSaving] = useState(false)
+  const [confirmRemoveOpen, setConfirmRemoveOpen] = useState(false)
+  const [showEdit, setShowEdit] = useState(false)
+  const canPortal = typeof document !== 'undefined'
 
   async function handleRemove() {
     setSaving(true)
@@ -347,95 +414,108 @@ function LinkRow({ link, onUpdated, canManage }: { link: ManagerLink; onUpdated:
   }
 
   return (
-    <div className={`border rounded-2xl transition-colors ${link.is_active ? 'border-brand-purple/15 bg-white' : 'border-red-100 bg-red-50/30'}`}>
-      <div className="flex items-center gap-4 px-5 py-4">
-        <div className="w-9 h-9 rounded-full bg-brand-purple/10 flex items-center justify-center text-sm font-bold text-brand-purple shrink-0">
-          {link.manager?.name?.charAt(0) || 'M'}
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-content-primary">{link.manager?.name}</p>
-          <p className="text-xs text-content-muted">{link.manager?.email}</p>
-          {link.manager?.agency_name && <p className="text-[11px] text-content-muted mt-1">{link.manager.agency_name}</p>}
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <span className={`text-xs px-2.5 py-1 rounded-full font-semibold ${link.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+    <>
+      <tr className="border-b border-brand-purple/6 align-top last:border-b-0">
+        <td className="px-4 py-3 text-sm font-medium text-content-primary">{link.celebrity?.name || '—'}</td>
+        <td className="px-4 py-3">
+          <div className="flex flex-wrap gap-2">
+            {link.permissions.length > 0 ? (
+              link.permissions.map((permission) => (
+                <span key={permission} className="inline-flex rounded-full bg-brand-purple/10 px-2.5 py-1 text-[11px] font-semibold text-brand-purple">
+                  {permission.replace(/_/g, ' ')}
+                </span>
+              ))
+            ) : (
+              <span className="text-xs text-content-muted">No permissions</span>
+            )}
+          </div>
+        </td>
+        <td className="px-4 py-3">
+          <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${link.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
             {link.is_active ? 'Active' : 'Inactive'}
           </span>
-          {canManage && (
-            <>
-              <button onClick={() => setExpanded((value) => !value)} className="text-content-muted hover:text-content-primary transition-colors text-xs font-semibold">
-                {expanded ? 'Hide' : 'Edit'}
+        </td>
+        <td className="px-4 py-3 text-center">
+          {canManage ? (
+            <div className="mx-auto flex w-fit flex-wrap items-center justify-center gap-2">
+              <button onClick={() => setShowEdit(true)} className="inline-flex items-center gap-1.5 rounded-lg border border-brand-purple/20 px-3 py-1.5 text-xs font-semibold text-content-secondary transition-colors hover:border-brand-purple/40 hover:text-brand-purple">
+                <Pencil className="w-3.5 h-3.5" />
+                Edit
               </button>
-              <button onClick={handleToggleActive} disabled={saving} className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg transition-all ${link.is_active ? 'bg-amber-50 text-amber-700 hover:bg-amber-100' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'}`}>
+              <button
+                onClick={async () => {
+                  setSaving(true)
+                  try {
+                    await adminApi.updateCelebrityManager(link.celebrity_id, link.id, { is_active: !link.is_active, permissions: link.permissions })
+                    onUpdated()
+                  } finally {
+                    setSaving(false)
+                  }
+                }}
+                disabled={saving}
+                className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all ${link.is_active ? 'bg-amber-50 text-amber-700 hover:bg-amber-100' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'}`}
+              >
                 {saving ? <Spinner size="sm" /> : link.is_active ? <Link2Off className="w-3.5 h-3.5" /> : <Link2 className="w-3.5 h-3.5" />}
                 {link.is_active ? 'Deactivate' : 'Reactivate'}
               </button>
-              <button onClick={() => setConfirmRemoveOpen(true)} disabled={saving} className="text-red-500 hover:text-red-700 transition-colors p-1.5 rounded-lg hover:bg-red-50">
-                <X className="w-4 h-4" />
+              <button onClick={() => setConfirmRemoveOpen(true)} disabled={saving} className="inline-flex items-center gap-1.5 rounded-lg bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-600 transition-colors hover:bg-red-100">
+                <X className="w-3.5 h-3.5" />
+                Remove
               </button>
-            </>
+            </div>
+          ) : (
+            <span className="text-xs text-content-muted">No actions</span>
           )}
-        </div>
-      </div>
+        </td>
+      </tr>
 
-      {expanded && (
-        <div className="px-5 pb-4 border-t border-brand-purple/8 pt-4">
-          <p className="text-xs font-semibold text-content-muted mb-2 uppercase tracking-wide">Permissions</p>
-          <div className="flex flex-wrap gap-2 mb-3">
-            {MANAGER_PERMISSIONS.map((permission) => (
-              <PermissionToggle key={permission} perm={permission} selected={permissions.includes(permission)} onChange={() => togglePerm(permission)} />
-            ))}
-          </div>
-          {link.notes && <p className="text-xs text-content-muted mb-3">Notes: {link.notes}</p>}
-          <button onClick={handleSavePermissions} disabled={saving} className="flex items-center gap-2 px-4 py-2 rounded-xl text-white text-sm font-semibold disabled:opacity-60" style={{ background: 'linear-gradient(135deg,#9a78fe,#422266)' }}>
-            {saving ? <Spinner size="sm" /> : <Shield className="w-4 h-4" />}
-            Save Permissions
-          </button>
-        </div>
+      {canPortal && createPortal(
+        <>
+          <ConfirmActionModal
+            open={confirmRemoveOpen}
+            title="Remove manager link"
+            message={`Remove ${link.manager?.name || 'this manager'} from ${link.celebrity?.name || 'this celebrity'}?`}
+            confirmLabel="Remove"
+            tone="danger"
+            loading={saving}
+            onClose={() => setConfirmRemoveOpen(false)}
+            onConfirm={handleRemove}
+          />
+          {showEdit && (
+            <EditLinkModal
+              link={link}
+              onClose={() => setShowEdit(false)}
+              onSaved={onUpdated}
+            />
+          )}
+        </>,
+        document.body
       )}
-
-      <ConfirmActionModal
-        open={confirmRemoveOpen}
-        title="Remove manager link"
-        message={`Remove ${link.manager?.name || 'this manager'} from this celebrity?`}
-        confirmLabel="Remove"
-        tone="danger"
-        loading={saving}
-        onClose={() => setConfirmRemoveOpen(false)}
-        onConfirm={handleRemove}
-      />
-    </div>
+    </>
   )
 }
 
 export default function CelebrityManagersPage() {
-  const [links, setLinks] = useState<ManagerLink[]>([])
   const [managers, setManagers] = useState<ManagerOption[]>([])
   const [celebrities, setCelebrities] = useState<CelebrityOption[]>([])
-  const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
-  const [page, setPage] = useState(1)
   const [showAdd, setShowAdd] = useState(false)
   const [addCelebId, setAddCelebId] = useState<string | undefined>(undefined)
-  const limit = 20
+  const [addManagerId, setAddManagerId] = useState<string | undefined>(undefined)
+  const [expandedManagerId, setExpandedManagerId] = useState<string | null>(null)
 
   const permissions = usePermissions()
   const canManage = permissions.includes('celebrity_managers.manage')
   const debouncedSearch = useDebounce(search, 300)
 
-  const fetchLinks = useCallback(() => {
+  const fetchManagers = useCallback(() => {
     setLoading(true)
-    const params = new URLSearchParams({ page: String(page), limit: String(limit) })
-    if (debouncedSearch) params.set('search', debouncedSearch)
     Promise.all([
-      adminApi.managerLinks(params.toString()),
       adminApi.managers(),
       adminApi.celebrities('limit=200'),
     ])
-      .then(([linkRes, managerRes, celebRes]: any[]) => {
-        setLinks(linkRes.data || [])
-        setTotal(linkRes.total || 0)
+      .then(([managerRes, celebRes]: any[]) => {
         setManagers(managerRes.data || [])
         setCelebrities((celebRes.data || []).map((item: any) => ({
           id: item.id,
@@ -445,22 +525,22 @@ export default function CelebrityManagersPage() {
       })
       .catch(() => null)
       .finally(() => setLoading(false))
-  }, [debouncedSearch, page])
+  }, [])
 
-  useEffect(() => { setPage(1) }, [debouncedSearch])
-  useEffect(() => { fetchLinks() }, [fetchLinks])
+  useEffect(() => { fetchManagers() }, [fetchManagers])
 
-  const byCelebrity: Record<string, { celebrity: CelebrityOption; links: ManagerLink[] }> = {}
-  for (const link of links) {
-    const celebrity = link.celebrity
-    if (!celebrity) continue
-    if (!byCelebrity[celebrity.id]) {
-      byCelebrity[celebrity.id] = { celebrity, links: [] }
-    }
-    byCelebrity[celebrity.id].links.push(link)
-  }
-
-  const totalPages = Math.ceil(total / limit)
+  const filteredManagers = managers.filter((manager) => {
+    const term = debouncedSearch.trim().toLowerCase()
+    if (!term) return true
+    const linkedNames = (manager.celebrity_links || []).map((link) => link.celebrity.name.toLowerCase()).join(' ')
+    return [
+      manager.name,
+      manager.email,
+      manager.phone,
+      manager.agency_name,
+      linkedNames,
+    ].some((value) => String(value || '').toLowerCase().includes(term))
+  })
 
   return (
     <div className="p-8">
@@ -469,8 +549,9 @@ export default function CelebrityManagersPage() {
           managers={managers}
           celebrities={celebrities}
           initialCelebId={addCelebId}
-          onSaved={() => { setShowAdd(false); setAddCelebId(undefined); fetchLinks() }}
-          onCancel={() => { setShowAdd(false); setAddCelebId(undefined) }}
+          initialManagerId={addManagerId}
+          onSaved={() => { setShowAdd(false); setAddCelebId(undefined); setAddManagerId(undefined); fetchManagers() }}
+          onCancel={() => { setShowAdd(false); setAddCelebId(undefined); setAddManagerId(undefined) }}
         />
       )}
 
@@ -481,13 +562,13 @@ export default function CelebrityManagersPage() {
           </div>
           <div>
             <h1 className="text-2xl font-bold text-content-primary">Celebrity Managers</h1>
-            <p className="text-sm text-content-muted mt-0.5">{total} manager links across all celebrities</p>
+            <p className="text-sm text-content-muted mt-0.5">{managers.length} managers across the platform</p>
           </div>
         </div>
         {canManage && (
-          <button onClick={() => { setAddCelebId(undefined); setShowAdd(true) }} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-white text-sm font-semibold" style={{ background: 'linear-gradient(135deg,#9a78fe,#422266)' }}>
+          <button onClick={() => { setAddCelebId(undefined); setAddManagerId(undefined); setShowAdd(true) }} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-white text-sm font-semibold" style={{ background: 'linear-gradient(135deg,#9a78fe,#422266)' }}>
             <Plus className="w-4 h-4" />
-            Add manager access
+            Add New Manager
           </button>
         )}
       </div>
@@ -506,52 +587,124 @@ export default function CelebrityManagersPage() {
 
       {loading && <PageLoader />}
 
-      {!loading && Object.keys(byCelebrity).length === 0 && (
+      {!loading && filteredManagers.length === 0 && (
         <div className="bg-white rounded-2xl border border-brand-purple/12 p-8 text-center">
-          <p className="text-sm text-content-muted">No manager links found</p>
+          <p className="text-sm text-content-muted">No managers found</p>
         </div>
       )}
 
-      <div className="space-y-6">
-        {Object.values(byCelebrity).map(({ celebrity, links: celebrityLinks }) => (
-          <div key={celebrity.id} className="bg-white rounded-2xl border border-brand-purple/12 shadow-card overflow-hidden">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-brand-purple/8">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-full bg-surface-subtle flex items-center justify-center text-sm font-bold text-brand-purple">
-                  {celebrity.name?.charAt(0)}
-                </div>
-                <div>
-                  <p className="text-sm font-bold text-content-primary">{celebrity.name}</p>
-                  <p className="text-xs text-content-muted">{celebrityLinks.length} manager{celebrityLinks.length !== 1 ? 's' : ''}</p>
-                </div>
-              </div>
-              {canManage && (
-                <button onClick={() => { setAddCelebId(celebrity.id); setShowAdd(true) }} className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg transition-all text-white" style={{ background: 'linear-gradient(135deg,#9a78fe,#422266)' }}>
-                  <Plus className="w-3.5 h-3.5" />
-                  Add Manager
-                </button>
-              )}
-            </div>
-            <div className="p-4 space-y-3">
-              {celebrityLinks.map((link) => (
-                <LinkRow key={link.id} link={link} onUpdated={fetchLinks} canManage={canManage} />
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between mt-4">
-          <p className="text-sm text-content-muted">Page {page} of {totalPages}</p>
-          <div className="flex gap-2">
-            <button disabled={page <= 1} onClick={() => setPage((value) => value - 1)} className="px-4 py-2 rounded-xl border border-brand-purple/20 text-sm font-semibold text-content-secondary disabled:opacity-40 hover:bg-surface-subtle transition-colors">
-              Previous
-            </button>
-            <button disabled={page >= totalPages} onClick={() => setPage((value) => value + 1)} className="px-4 py-2 rounded-xl border border-brand-purple/20 text-sm font-semibold text-content-secondary disabled:opacity-40 hover:bg-surface-subtle transition-colors">
-              Next
-            </button>
-          </div>
+      {!loading && filteredManagers.length > 0 && (
+        <div className="overflow-hidden rounded-2xl border border-brand-purple/12 bg-white shadow-card">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-brand-purple/8">
+                {['Manager', 'Contact', 'Agency', 'Actions'].map((header) => (
+                  <th
+                    key={header}
+                    className={`px-5 py-3.5 text-xs font-semibold uppercase tracking-wide text-content-muted ${header === 'Actions' ? 'text-center' : 'text-left'}`}
+                  >
+                    {header}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-brand-purple/6">
+              {filteredManagers.map((manager) => {
+                const expanded = expandedManagerId === manager.id
+                const linkedCount = manager.celebrity_links?.length || 0
+                return (
+                  <Fragment key={manager.id}>
+                    <tr key={manager.id} className="hover:bg-surface-subtle/30 transition-colors">
+                      <td className="px-5 py-4">
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-brand-purple/10 text-sm font-bold text-brand-purple">
+                            {manager.name?.charAt(0) || 'M'}
+                          </div>
+                          <div>
+                            <p className="text-sm font-semibold text-content-primary">{manager.name}</p>
+                            <p className="text-xs text-content-muted">{manager.is_active ? 'Active manager' : 'Inactive manager'}</p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-5 py-4">
+                        <p className="text-sm text-content-primary">{manager.email}</p>
+                        <p className="mt-1 text-xs text-content-muted">{manager.phone || 'No phone'}</p>
+                      </td>
+                      <td className="px-5 py-4 text-sm text-content-secondary">{manager.agency_name || '—'}</td>
+                      <td className="px-5 py-4 text-center">
+                        <div className="mx-auto flex w-fit flex-wrap items-center justify-center gap-2">
+                          {canManage && (
+                            <button
+                              onClick={() => { setAddManagerId(manager.id); setAddCelebId(undefined); setShowAdd(true) }}
+                              className="rounded-lg bg-brand-purple px-3 py-1.5 text-xs font-semibold text-white transition-all hover:opacity-90"
+                            >
+                              Add Celebrity
+                            </button>
+                          )}
+                          <button
+                            onClick={() => setExpandedManagerId(expanded ? null : manager.id)}
+                            className="rounded-lg border border-brand-purple/20 px-3 py-1.5 text-xs font-semibold text-content-secondary transition-colors hover:border-brand-purple/40 hover:text-brand-purple"
+                          >
+                            {expanded ? 'Close' : `View (${linkedCount})`}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                    {expanded && (
+                      <tr key={`${manager.id}-expanded`} className="bg-surface-subtle/20">
+                        <td colSpan={4} className="px-5 py-4">
+                          {(manager.celebrity_links || []).length === 0 ? (
+                            <p className="text-sm text-content-muted">This manager has no celebrity links yet.</p>
+                          ) : (
+                            <div className="overflow-hidden rounded-2xl border border-brand-purple/10 bg-white">
+                              <table className="w-full">
+                                <thead>
+                                  <tr className="border-b border-brand-purple/8 bg-surface-subtle/40">
+                                    {['Assigned Celebrity', 'Permissions', 'Status', 'Actions'].map((header) => (
+                                      <th key={header} className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-content-muted">
+                                        {header}
+                                      </th>
+                                    ))}
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {manager.celebrity_links!.map((link) => (
+                                    <LinkRow
+                                      key={link.id}
+                                      link={{
+                                        id: link.id,
+                                        celebrity_id: link.celebrity.id,
+                                        permissions: link.permissions,
+                                        is_active: link.is_active,
+                                        notes: link.notes,
+                                        celebrity: {
+                                          id: link.celebrity.id,
+                                          name: link.celebrity.name,
+                                        },
+                                        manager: {
+                                          id: manager.id,
+                                          name: manager.name,
+                                          email: manager.email,
+                                          phone: manager.phone,
+                                          agency_name: manager.agency_name,
+                                        },
+                                      }}
+                                      onUpdated={fetchManagers}
+                                      canManage={canManage}
+                                    />
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                )
+              })}
+            </tbody>
+          </table>
         </div>
       )}
     </div>

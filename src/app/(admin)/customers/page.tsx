@@ -90,6 +90,13 @@ interface AuditModalProps {
   onClose: () => void
 }
 
+interface CustomerProfileModalProps {
+  userId: string
+  mode: 'view' | 'edit'
+  onClose: () => void
+  onSaved: (user: any) => void
+}
+
 function AuditModal({ user, onClose }: AuditModalProps) {
   const [logs, setLogs]     = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -142,6 +149,146 @@ function AuditModal({ user, onClose }: AuditModalProps) {
   )
 }
 
+function CustomerProfileModal({ userId, mode, onClose, onSaved }: CustomerProfileModalProps) {
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [form, setForm] = useState({
+    id: '',
+    name: '',
+    email: '',
+    phone: '',
+    company: '',
+    account_type: 'individual',
+    status: 'active',
+    is_email_verified: false,
+    created_at: '',
+    last_login_at: '',
+  })
+
+  const readOnly = mode === 'view'
+
+  function sanitizePhone(value: string) {
+    return value.replace(/\D/g, '')
+  }
+
+  useEffect(() => {
+    adminApi.getUser(userId)
+      .then((res: any) => {
+        const user = res.data || {}
+        setForm({
+          id: user.id || '',
+          name: user.name || '',
+          email: user.email || '',
+          phone: user.phone || '',
+          company: user.company || '',
+          account_type: user.account_type || 'individual',
+          status: user.status || 'active',
+          is_email_verified: Boolean(user.is_email_verified),
+          created_at: user.created_at || '',
+          last_login_at: user.last_login_at || '',
+        })
+      })
+      .catch((err: Error) => setError(err.message))
+      .finally(() => setLoading(false))
+  }, [userId])
+
+  async function handleSave() {
+    setSaving(true)
+    setError('')
+    try {
+      if (form.phone && !/^\d+$/.test(form.phone)) {
+        setError('Phone number must contain digits only.')
+        setSaving(false)
+        return
+      }
+      const res: any = await adminApi.updateUser(userId, {
+        name: form.name,
+        phone: form.phone,
+        company: form.company,
+        account_type: form.account_type,
+      })
+      onSaved(res.data)
+      onClose()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update customer')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+      <div className="w-full max-w-2xl rounded-2xl bg-white shadow-xl">
+        <div className="flex items-start justify-between border-b border-brand-purple/10 px-6 py-4">
+          <div>
+            <h2 className="text-lg font-bold text-content-primary">{readOnly ? 'Customer Details' : 'Edit Customer'}</h2>
+            <p className="text-sm text-content-muted mt-0.5">
+              {readOnly ? 'Review customer information.' : 'Update customer information except email and password.'}
+            </p>
+          </div>
+          <button onClick={onClose} className="text-content-muted hover:text-content-primary transition-colors">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="px-6 py-5">
+          {loading ? (
+            <PageLoader />
+          ) : (
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Full Name">
+                <input value={form.name} onChange={e => setForm(prev => ({ ...prev, name: e.target.value }))} disabled={readOnly} className={inputCls(readOnly)} />
+              </Field>
+              <Field label="Email">
+                <input value={form.email} disabled className={inputCls(true)} />
+              </Field>
+              <Field label="Phone">
+                <input value={form.phone} onChange={e => setForm(prev => ({ ...prev, phone: sanitizePhone(e.target.value) }))} inputMode="numeric" disabled={readOnly} className={inputCls(readOnly)} />
+              </Field>
+              <Field label="Company">
+                <input value={form.company} onChange={e => setForm(prev => ({ ...prev, company: e.target.value }))} disabled={readOnly} className={inputCls(readOnly)} />
+              </Field>
+              <Field label="Account Type">
+                <select value={form.account_type} onChange={e => setForm(prev => ({ ...prev, account_type: e.target.value }))} disabled={readOnly} className={inputCls(readOnly)}>
+                  <option value="individual">Individual</option>
+                  <option value="agency">Business / Company</option>
+                </select>
+              </Field>
+              <Field label="Status">
+                <input value={form.status} disabled className={inputCls(true)} />
+              </Field>
+              <Field label="Email Verified">
+                <input value={form.is_email_verified ? 'Yes' : 'No'} disabled className={inputCls(true)} />
+              </Field>
+              <Field label="Joined">
+                <input value={form.created_at ? new Date(form.created_at).toLocaleString() : '—'} disabled className={inputCls(true)} />
+              </Field>
+            </div>
+          )}
+          {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
+        </div>
+
+        <div className="flex gap-3 border-t border-brand-purple/10 px-6 py-4">
+          <button onClick={onClose} className="flex-1 px-4 py-2.5 rounded-xl border border-brand-purple/20 text-sm font-semibold text-content-secondary hover:bg-surface-subtle transition-colors">
+            Close
+          </button>
+          {!readOnly && (
+            <button
+              onClick={handleSave}
+              disabled={loading || saving}
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-white text-sm font-semibold disabled:opacity-60"
+              style={{ background: 'linear-gradient(135deg,#9a78fe,#422266)' }}
+            >
+              {saving ? <Spinner size="sm" /> : 'Save Changes'}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function UsersPage() {
   const [users, setUsers]             = useState<any[]>([])
   const [total, setTotal]             = useState(0)
@@ -152,6 +299,7 @@ export default function UsersPage() {
   const [suspendTarget, setSuspendTarget] = useState<any | null>(null)
   const [suspending, setSuspending]   = useState(false)
   const [auditTarget, setAuditTarget] = useState<any | null>(null)
+  const [profileTarget, setProfileTarget] = useState<{ id: string; mode: 'view' | 'edit' } | null>(null)
 
   const permissions = usePermissions()
   const canManage   = permissions.includes('users.manage')
@@ -196,7 +344,7 @@ export default function UsersPage() {
     setSuspending(false)
   }
 
-  const colCount = 7 + (canManage ? 1 : 0) + (canAudit ? 1 : 0)
+  const colCount = 8 + (canManage ? 1 : 0) + (canAudit ? 1 : 0)
 
   return (
     <div className="p-8">
@@ -210,6 +358,16 @@ export default function UsersPage() {
       )}
       {auditTarget && (
         <AuditModal user={auditTarget} onClose={() => setAuditTarget(null)} />
+      )}
+      {profileTarget && (
+        <CustomerProfileModal
+          userId={profileTarget.id}
+          mode={profileTarget.mode}
+          onClose={() => setProfileTarget(null)}
+          onSaved={(updatedUser) => {
+            setUsers(prev => prev.map(user => user.id === updatedUser.id ? { ...user, ...updatedUser } : user))
+          }}
+        />
       )}
 
       <div className="mb-6">
@@ -243,7 +401,7 @@ export default function UsersPage() {
         <table className="w-full">
           <thead>
             <tr className="border-b border-brand-purple/8">
-              {['Customer', 'Email', 'Auth', 'Status', 'Verified', 'Last Login', 'Joined',
+              {['Customer', 'Email', 'Auth', 'Status', 'Verified', 'Last Login', 'Joined', 'Profile',
                 ...(canAudit  ? ['Activity'] : []),
                 ...(canManage ? ['Actions']  : []),
               ].map(h => (
@@ -295,6 +453,24 @@ export default function UsersPage() {
                   </td>
                   <td className="px-5 py-3.5 text-xs text-content-muted">{fmt(user.last_login_at)}</td>
                   <td className="px-5 py-3.5 text-xs text-content-muted">{fmt(user.created_at)}</td>
+                  <td className="px-5 py-3.5">
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => setProfileTarget({ id: user.id, mode: 'view' })}
+                        className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-brand-purple/20 text-content-secondary hover:border-brand-purple/40 hover:text-brand-purple transition-all"
+                      >
+                        View
+                      </button>
+                      {canManage && (
+                        <button
+                          onClick={() => setProfileTarget({ id: user.id, mode: 'edit' })}
+                          className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-brand-purple/20 text-content-secondary hover:border-brand-purple/40 hover:text-brand-purple transition-all"
+                        >
+                          Edit
+                        </button>
+                      )}
+                    </div>
+                  </td>
                   {canAudit && (
                     <td className="px-5 py-3.5">
                       <button
@@ -341,4 +517,21 @@ export default function UsersPage() {
       </div>
     </div>
   )
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="block">
+      <span className="block text-sm font-semibold text-content-primary mb-1.5">{label}</span>
+      {children}
+    </label>
+  )
+}
+
+function inputCls(readOnly: boolean) {
+  return `w-full rounded-xl border border-brand-purple/20 px-3 py-2.5 text-sm outline-none transition-colors ${
+    readOnly
+      ? 'bg-surface-subtle text-content-muted'
+      : 'bg-white text-content-primary focus:border-brand-purple'
+  }`
 }

@@ -17,6 +17,21 @@ const STATUS_COLORS: Record<string, string> = {
 const STATUSES = ['pending', 'in-progress', 'review', 'delivered', 'failed', 'cancelled']
 const toUiStatus = (status?: string) => status === 'in_progress' ? 'in-progress' : status || 'pending'
 
+function getCreatorApprovalInfo(job: any): { approved: boolean; label: string } {
+  const history = Array.isArray(job?.status_history) ? job.status_history : []
+  const note = history
+    .map((entry: any) => String(entry?.note || ''))
+    .find((value: string) =>
+      value === 'Approved by celebrity for final delivery' || value === 'Approved by manager for final delivery'
+    )
+
+  if (!note) return { approved: false, label: 'Waiting for celebrity approval' }
+  return {
+    approved: true,
+    label: note.includes('manager') ? 'Manager approved' : 'Celebrity approved',
+  }
+}
+
 const fmt = (d: string) =>
   d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 
@@ -64,6 +79,9 @@ function ReviewModal({
 
   const assetUrl  = job.watermarked_url || job.preview_url || job.final_video_url || ''
   const isImageAd = job.product_type === 'image_ad' || job.product_type === 'image-ad'
+  const creatorApproval = getCreatorApprovalInfo(job)
+  const clientApproved = Boolean(job.client_preview_approved_at)
+  const canDeliver = creatorApproval.approved && clientApproved
 
   return (
     <>
@@ -180,6 +198,27 @@ function ReviewModal({
               </div>
             )}
 
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <div className="rounded-xl border border-brand-purple/10 bg-surface-subtle px-4 py-3">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-content-muted mb-1">Creator Approval</p>
+                <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${creatorApproval.approved ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                  {creatorApproval.label}
+                </span>
+              </div>
+              <div className="rounded-xl border border-brand-purple/10 bg-surface-subtle px-4 py-3">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-content-muted mb-1">Client Preview Approval</p>
+                <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${clientApproved ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                  {clientApproved ? 'Client approved' : 'Waiting for client approval'}
+                </span>
+              </div>
+            </div>
+
+            {!canDeliver && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                Superadmin can deliver this service only after both approvals are completed: celebrity or assigned manager approval, and client preview approval.
+              </div>
+            )}
+
             {/* Rejection form */}
             {rejecting && (
               <div className="border border-red-200 rounded-xl p-4 flex flex-col gap-3">
@@ -228,14 +267,14 @@ function ReviewModal({
               </button>
               <button
                 onClick={approve}
-                disabled={approving}
+                disabled={approving || !canDeliver}
                 className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-60"
                 style={{ background: 'linear-gradient(135deg,#9a78fe,#422266)' }}
               >
                 {approving
                   ? <Loader2 className="w-4 h-4 animate-spin" />
                   : <CheckCircle2 className="w-4 h-4" />}
-                {approving ? 'Approving...' : 'Approve & Deliver'}
+                {approving ? 'Delivering...' : 'Deliver Service'}
               </button>
             </div>
           )}
@@ -243,6 +282,15 @@ function ReviewModal({
       </div>
     </>
   )
+}
+
+function isValidUrl(value: string) {
+  try {
+    const parsed = new URL(value)
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:'
+  } catch {
+    return false
+  }
 }
 
 // ── Set Preview URL Modal ────────────────────────────────────────────────────
@@ -261,6 +309,7 @@ function SetPreviewModal({
 
   async function submit() {
     if (!url.trim()) { setError('Please enter a URL'); return }
+    if (!isValidUrl(url.trim())) { setError('Please enter a valid URL'); return }
     setBusy(true)
     setError('')
     try {

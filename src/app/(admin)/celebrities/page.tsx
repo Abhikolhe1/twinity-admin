@@ -42,7 +42,7 @@ interface Celeb {
 
 type FormState = {
   name: string; nameAr: string; slug: string; industry: string
-  nationality: string; nationalityAr: string; initials: string
+  nationality: string; nationalityAr: string; initials: string; contactEmail: string
   bio: string; bioAr: string; avatarColor: string; thumbnailUrl: string
   languages: string; tags: string; tagsAr: string
   voiceModelId: string
@@ -71,7 +71,7 @@ const AVATAR_COLORS = [
 
 const EMPTY_FORM: FormState = {
   name: '', nameAr: '', slug: '', industry: 'entertainment',
-  nationality: '', nationalityAr: '', initials: '',
+  nationality: '', nationalityAr: '', initials: '', contactEmail: '',
   bio: '', bioAr: '', avatarColor: AVATAR_COLORS[0], thumbnailUrl: '',
   languages: '', tags: '', tagsAr: '',
   voiceModelId: '',
@@ -94,6 +94,7 @@ function celebToForm(c: Celeb): FormState {
     nationality: c.nationality,
     nationalityAr: c.nationality_ar,
     initials: c.initials,
+    contactEmail: c.contact_email ?? '',
     bio: c.bio ?? '',
     bioAr: c.bio_ar ?? '',
     avatarColor: c.avatar_color,
@@ -122,6 +123,7 @@ function formToBody(f: FormState) {
     nationality: f.nationality.trim(),
     nationalityAr: f.nationalityAr.trim(),
     initials: f.initials.trim() || f.name.slice(0, 2).toUpperCase(),
+    contactEmail: f.contactEmail.trim() || undefined,
     bio: f.bio.trim() || undefined,
     bioAr: f.bioAr.trim() || undefined,
     avatarColor: f.avatarColor,
@@ -140,12 +142,15 @@ function formToBody(f: FormState) {
   }
 }
 
-function validateCelebForm(form: FormState): string | null {
+function validateCelebForm(form: FormState, isEdit = false): string | null {
+  const email = form.contactEmail.trim()
   if (!form.name.trim()) return 'Name (EN) is required.'
   if (!form.nameAr.trim()) return 'Name (AR) is required.'
   if (!form.industry.trim()) return 'Industry is required.'
   if (!form.nationality.trim()) return 'Nationality (EN) is required.'
   if (!form.nationalityAr.trim()) return 'Nationality (AR) is required.'
+  if (!isEdit && !email) return 'Contact email is required.'
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return 'Enter a valid contact email.'
   if (!form.bio.trim()) return 'Bio (English) is required.'
   if (!form.languages.split(',').map(x => x.trim()).filter(Boolean).length) return 'At least one language is required.'
   if (!form.thumbnailUrl.trim() && !form.avatarColor.trim()) return 'Add a profile image or keep an avatar color selected.'
@@ -217,7 +222,7 @@ function CelebDrawer({
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
-    const validationError = validateCelebForm(form)
+    const validationError = validateCelebForm(form, isEdit)
     if (validationError) {
       setError(validationError)
       return
@@ -309,6 +314,15 @@ function CelebDrawer({
               </Field>
               <Field label="Nationality (AR)">
                 <input dir="rtl" value={form.nationalityAr} onChange={e => set('nationalityAr', e.target.value)} className={inputCls} placeholder="سعودي" />
+              </Field>
+              <Field label="Contact Email *">
+                <input
+                  type="email"
+                  value={form.contactEmail}
+                  onChange={e => set('contactEmail', e.target.value)}
+                  className={inputCls}
+                  placeholder="celebrity@twinity.ai"
+                />
               </Field>
             </div>
           </section>

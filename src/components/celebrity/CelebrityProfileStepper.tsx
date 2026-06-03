@@ -83,6 +83,7 @@ type Profile = {
   languages: string[]
   tags: string[]
   tags_ar: string[]
+  voice_model_id?: string | null
   avatar_color?: string | null
   price_range?: {
     greeting?: { min?: number; max?: number }
@@ -147,6 +148,7 @@ const DEFAULT_PROFILE: Profile = {
   languages: [],
   tags: [],
   tags_ar: [],
+  voice_model_id: '',
   avatar_color: AVATAR_COLORS[0],
   price_range: {
     greeting: { min: 0, max: 0 },
@@ -201,6 +203,42 @@ function isDigitsOnly(value: string): boolean {
   return /^\d+$/.test(value)
 }
 
+function sanitizePhone(value: string): string {
+  return value.replace(/\D/g, '')
+}
+
+function isValidUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value)
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
+function parseFlexibleUrls(value: string): string[] {
+  return value
+    .split(/[\s,]+/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+function deriveSavedSteps(profile: Profile): boolean[] {
+  const saved = Array.from({ length: STEPS.length }, () => false)
+  for (let index = 0; index < STEPS.length; index += 1) {
+    const validationError = validateStep(STEPS[index].key, profile)
+    if (validationError) break
+    saved[index] = true
+  }
+  return saved
+}
+
+function getResumeStepIndex(savedSteps: boolean[]): number {
+  const firstIncomplete = savedSteps.findIndex((done) => !done)
+  if (firstIncomplete >= 0) return firstIncomplete
+  return Math.max(0, STEPS.length - 1)
+}
+
 function normalizeProfile(input: any): Profile {
   return {
     ...DEFAULT_PROFILE,
@@ -215,6 +253,7 @@ function normalizeProfile(input: any): Profile {
     languages: Array.isArray(input.languages) ? input.languages : [],
     tags: Array.isArray(input.tags) ? input.tags : [],
     tags_ar: Array.isArray(input.tags_ar) ? input.tags_ar : [],
+    voice_model_id: input.voice_model_id ?? '',
     social_links: input.social_links ?? {},
     allowed_content_categories: Array.isArray(input.allowed_content_categories) ? input.allowed_content_categories : [],
     prohibited_industries: Array.isArray(input.prohibited_industries) ? input.prohibited_industries : [],
@@ -269,6 +308,7 @@ function buildStepPayload(step: StepKey, profile: Profile) {
         avatar_color: profile.avatar_color,
         tags: profile.tags,
         tags_ar: profile.tags_ar,
+        voice_model_id: profile.voice_model_id,
         social_links: profile.social_links,
         price_range: profile.price_range,
       }
@@ -314,8 +354,12 @@ function validateStep(step: StepKey, profile: Profile): string | null {
     if (profile.contact_phone && !isDigitsOnly(profile.contact_phone)) return 'Phone number must contain digits only.'
     if (!profile.languages.length) return 'At least one language is required.'
     if (!profile.thumbnail_url?.trim()) return 'Profile image URL is required.'
+    if (profile.thumbnail_url && !isValidUrl(profile.thumbnail_url)) return 'Enter a valid profile image URL.'
     if (!profile.bio?.trim()) return 'Bio is required.'
     if (!Object.values(profile.social_links).some(Boolean)) return 'At least one social link is required.'
+    for (const [platform, url] of Object.entries(profile.social_links)) {
+      if (url && !isValidUrl(url)) return `Enter a valid ${platform} URL.`
+    }
     const greetingMin = Number(profile.price_range?.greeting?.min)
     const greetingMax = Number(profile.price_range?.greeting?.max)
     const videoMin = Number(profile.price_range?.['video-ad']?.min)
@@ -355,6 +399,9 @@ function validateStep(step: StepKey, profile: Profile): string | null {
   }
   if (step === 'media') {
     if (!profile.approved_media_urls.length) return 'Add at least one approved media URL.'
+    for (const mediaUrl of profile.approved_media_urls) {
+      if (!isValidUrl(mediaUrl)) return 'Each approved media entry must be a valid URL.'
+    }
     if (!profile.contract_acceptance.accepted) return 'Contract acceptance is required.'
     if (!profile.contract_acceptance.signedName.trim()) return 'Signed name is required.'
   }
@@ -378,6 +425,7 @@ export default function CelebrityProfileStepper({
   const [stepIndex, setStepIndex] = useState(0)
   const [reviewNote, setReviewNote] = useState('')
   const [draftFields, setDraftFields] = useState<Record<string, string>>({})
+  const [completedSteps, setCompletedSteps] = useState<boolean[]>(() => Array.from({ length: STEPS.length }, () => false))
 
   const step = STEPS[stepIndex]
 
@@ -391,9 +439,13 @@ export default function CelebrityProfileStepper({
           ? await adminApi.getMyCelebrityProfile()
           : await adminApi.getCelebrityProfileByAdmin(celebrityId!)
         if (cancelled) return
-        setProfile(normalizeProfile(res.data))
+        const normalized = normalizeProfile(res.data)
+        const savedSteps = deriveSavedSteps(normalized)
+        setProfile(normalized)
         setTemplates(res.templates ?? [])
         setReviewNote(String((res.data as any).review_notes || ''))
+        setCompletedSteps(savedSteps)
+        setStepIndex(getResumeStepIndex(savedSteps))
       } catch (err: any) {
         if (!cancelled) setError(err.message || 'Failed to load profile')
       } finally {
@@ -405,30 +457,20 @@ export default function CelebrityProfileStepper({
     return () => { cancelled = true }
   }, [scope, celebrityId])
 
-  const checklist = useMemo(() => {
-    if (!profile) return []
-    return [
-      Boolean(profile.name && profile.name_ar && profile.legal_name),
-      Boolean(profile.bio && profile.thumbnail_url && profile.languages.length),
-      Boolean(profile.allowed_content_categories.length && profile.prohibited_industries.length && profile.competitor_brands.length),
-      Boolean(profile.geographic_availability.allowedRegions.length),
-      Boolean(profile.tone_style_preferences.communicationStyle && profile.tone_style_preferences.endorsedTopics.length),
-      Boolean(profile.approval_preferences.templatePolicyReviewed),
-      Boolean(profile.manager_settings.selfManaged || (profile.manager_settings.managerName && profile.manager_settings.managerEmail && profile.manager_settings.permissions.length)),
-      Boolean(profile.approved_media_urls.length && profile.contract_acceptance.accepted && profile.contract_acceptance.signedName),
-    ]
-  }, [profile])
+  function canNavigateToStep(index: number) {
+    if (readOnly) return true
+    if (index <= stepIndex) return true
+    return completedSteps.slice(0, index).every(Boolean)
+  }
 
-  const highestUnlockedStep = useMemo(() => {
-    if (!profile) return 0
-    let unlocked = 0
-    for (let index = 0; index < STEPS.length; index += 1) {
-      const validationError = validateStep(STEPS[index].key, profile)
-      if (validationError) break
-      unlocked = index + 1
-    }
-    return Math.min(unlocked, STEPS.length - 1)
-  }, [profile])
+  useEffect(() => {
+    if (!success && !error) return
+    const timer = window.setTimeout(() => {
+      setSuccess('')
+      setError('')
+    }, 3000)
+    return () => window.clearTimeout(timer)
+  }, [success, error])
 
   function setField<K extends keyof Profile>(field: K, value: Profile[K]) {
     setProfile((current) => current ? { ...current, [field]: value } : current)
@@ -489,8 +531,10 @@ export default function CelebrityProfileStepper({
       const res: any = scope === 'self'
         ? await adminApi.saveMyCelebrityProfile(payload)
         : await adminApi.saveCelebrityProfileByAdmin(celebrityId!, payload)
-      setProfile(normalizeProfile(res.data))
+      const normalized = normalizeProfile(res.data)
+      setProfile(normalized)
       setDraftFields({})
+      setCompletedSteps((current) => current.map((done, index) => index === stepIndex ? true : done))
       setSuccess(`${step.title} saved.`)
       onUpdated?.()
       if (goNext && stepIndex < STEPS.length - 1) setStepIndex((current) => current + 1)
@@ -512,6 +556,15 @@ export default function CelebrityProfileStepper({
     setError('')
     setSuccess('')
     try {
+      const payload = buildStepPayload('media', profile)
+      const saveRes: any = scope === 'self'
+        ? await adminApi.saveMyCelebrityProfile(payload)
+        : await adminApi.saveCelebrityProfileByAdmin(celebrityId!, payload)
+      const normalized = normalizeProfile(saveRes.data)
+      setProfile(normalized)
+      setDraftFields({})
+      setCompletedSteps((current) => current.map((done, index) => index === stepIndex ? true : done))
+
       await adminApi.submitMyCelebrityProfile()
       setSuccess('Profile submitted for superadmin review.')
       onUpdated?.()
@@ -601,13 +654,13 @@ export default function CelebrityProfileStepper({
         )}
       </div>
 
-      <div className={onClose ? 'flex min-h-0 flex-1 flex-col lg:flex-row' : 'grid gap-6 lg:grid-cols-[240px_minmax(0,1fr)_320px]'}>
-        <div className={onClose ? 'border-b border-brand-purple/10 px-6 py-5 lg:w-64 lg:shrink-0 lg:border-b-0 lg:border-r' : ''}>
+      <div className={onClose ? 'flex min-h-0 flex-1 flex-col lg:flex-row' : 'grid gap-6 lg:h-[calc(100vh-10rem)] lg:grid-cols-[280px_minmax(0,1fr)] lg:items-start'}>
+        <div className={onClose ? 'border-b border-brand-purple/10 px-6 py-5 lg:w-72 lg:shrink-0 lg:border-b-0 lg:border-r lg:overflow-y-auto' : 'lg:sticky lg:top-8 lg:max-h-[calc(100vh-10rem)] lg:overflow-y-auto'}>
           <div className="space-y-2">
             {STEPS.map((item, index) => {
               const active = index === stepIndex
-              const done = index < checklist.length ? checklist[index] : false
-              const disabled = scope === 'self' && index > stepIndex && index > highestUnlockedStep
+              const done = completedSteps[index]
+              const disabled = !canNavigateToStep(index)
               return (
                 <button
                   key={item.key}
@@ -640,7 +693,7 @@ export default function CelebrityProfileStepper({
           </div>
         </div>
 
-        <div className={onClose ? 'min-h-0 flex-1 overflow-y-auto px-6 py-6' : ''}>
+        <div className={onClose ? 'min-h-0 flex-1 overflow-y-auto px-6 py-6' : 'min-h-0 lg:max-h-[calc(100vh-10rem)] lg:overflow-y-auto lg:pr-2'}>
           {error && <Notice tone="error">{error}</Notice>}
           {success && <Notice tone="success">{success}</Notice>}
           {profile.review_notes && (
@@ -650,28 +703,38 @@ export default function CelebrityProfileStepper({
           <Section title={step.title} description={step.description}>
             {step.key === 'identity' && (
               <>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <Field label="Stage name *"><input value={profile.name} onChange={(e) => setField('name', e.target.value)} className={inputCls} disabled={readOnly} /></Field>
-                  <Field label="Stage name (Arabic) *"><input value={profile.name_ar} onChange={(e) => setField('name_ar', e.target.value)} className={inputCls} dir="rtl" disabled={readOnly} /></Field>
-                  <Field label="Legal name *"><input value={profile.legal_name || ''} onChange={(e) => setField('legal_name', e.target.value)} className={inputCls} disabled={readOnly} /></Field>
-                  <Field label="Industry *"><input value={profile.industry} onChange={(e) => setField('industry', e.target.value)} className={inputCls} disabled={readOnly} /></Field>
-                  <Field label="Nationality *"><input value={profile.nationality} onChange={(e) => setField('nationality', e.target.value)} className={inputCls} disabled={readOnly} /></Field>
-                  <Field label="Nationality (Arabic) *"><input value={profile.nationality_ar} onChange={(e) => setField('nationality_ar', e.target.value)} className={inputCls} dir="rtl" disabled={readOnly} /></Field>
-                  <Field label="Region"><input value={profile.region || ''} onChange={(e) => setField('region', e.target.value)} className={inputCls} disabled={readOnly} /></Field>
-                  <Field label="Phone number"><input value={profile.contact_phone || ''} onChange={(e) => setField('contact_phone', e.target.value)} inputMode="numeric" className={inputCls} disabled={readOnly} /></Field>
+                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                  <Field label="Stage name *"><input value={profile.name} onChange={(e) => setField('name', e.target.value)} className={inputCls} disabled={readOnly} placeholder="Rakan Al Qassimi" /></Field>
+                  <Field label="Stage name (Arabic) *"><input value={profile.name_ar} onChange={(e) => setField('name_ar', e.target.value)} className={inputCls} dir="rtl" disabled={readOnly} placeholder="راكان القاسمي" /></Field>
+                  <Field label="Legal name *"><input value={profile.legal_name || ''} onChange={(e) => setField('legal_name', e.target.value)} className={inputCls} disabled={readOnly} placeholder="Rakan Abdullah Al Qassimi" /></Field>
+                  <Field label="Industry *"><input value={profile.industry} onChange={(e) => setField('industry', e.target.value)} className={inputCls} disabled={readOnly} placeholder="Entertainment" /></Field>
+                  <Field label="Nationality *"><input value={profile.nationality} onChange={(e) => setField('nationality', e.target.value)} className={inputCls} disabled={readOnly} placeholder="Saudi Arabian" /></Field>
+                  <Field label="Nationality (Arabic) *"><input value={profile.nationality_ar} onChange={(e) => setField('nationality_ar', e.target.value)} className={inputCls} dir="rtl" disabled={readOnly} placeholder="سعودي" /></Field>
+                  <Field label="Region"><input value={profile.region || ''} onChange={(e) => setField('region', e.target.value)} className={inputCls} disabled={readOnly} placeholder="Riyadh" /></Field>
+                  <Field label="Phone number"><input value={profile.contact_phone || ''} onChange={(e) => setField('contact_phone', sanitizePhone(e.target.value))} inputMode="numeric" className={inputCls} disabled={readOnly} placeholder="9665XXXXXXXX" /></Field>
                   <Field label="Portal email">
                     <input
                       value={profile.contact_email || ''}
                       onChange={(e) => setField('contact_email', e.target.value)}
                       disabled={readOnly || scope === 'self'}
                       className={`${inputCls} ${(readOnly || scope === 'self') ? 'bg-surface-subtle text-content-muted' : ''}`}
+                      placeholder="celebrity@twinity.ai"
                     />
                   </Field>
-                  <Field label="Languages (comma separated) *"><input value={getDraftValue('languages', profile.languages.join(', '))} onChange={(e) => setDraftField('languages', e.target.value, () => setField('languages', splitCsv(e.target.value)))} className={inputCls} disabled={readOnly} /></Field>
+                  <Field label="ElevenLabs voice ID">
+                    <input
+                      value={profile.voice_model_id || ''}
+                      onChange={(e) => setField('voice_model_id', e.target.value)}
+                      className={inputCls}
+                      disabled={readOnly}
+                      placeholder="EXAVITQu4vr4xnSDxMaL"
+                    />
+                  </Field>
+                  <Field label="Languages (comma separated) *"><input value={getDraftValue('languages', profile.languages.join(', '))} onChange={(e) => setDraftField('languages', e.target.value, () => setField('languages', splitCsv(e.target.value)))} className={inputCls} disabled={readOnly} placeholder="Arabic, English" /></Field>
                 </div>
 
                 <div className="mt-4 grid gap-4">
-                  <Field label="Profile image URL *"><input value={profile.thumbnail_url || ''} onChange={(e) => setField('thumbnail_url', e.target.value)} className={inputCls} disabled={readOnly} /></Field>
+                  <Field label="Profile image URL *"><input type="url" value={profile.thumbnail_url || ''} onChange={(e) => setField('thumbnail_url', e.target.value)} className={inputCls} disabled={readOnly} placeholder="https://example.com/profile-image.jpg" /></Field>
                   <Field label="Avatar color fallback">
                     <div className="flex flex-wrap gap-2">
                       {AVATAR_COLORS.map((color) => (
@@ -686,20 +749,20 @@ export default function CelebrityProfileStepper({
                       ))}
                     </div>
                   </Field>
-                  <Field label="Bio *"><textarea value={profile.bio || ''} onChange={(e) => setField('bio', e.target.value)} className={textareaCls} rows={4} disabled={readOnly} /></Field>
-                  <Field label="Bio (Arabic)"><textarea value={profile.bio_ar || ''} onChange={(e) => setField('bio_ar', e.target.value)} className={textareaCls} rows={4} dir="rtl" disabled={readOnly} /></Field>
-                  <Field label="English tags (comma separated)"><input value={getDraftValue('tags', profile.tags.join(', '))} onChange={(e) => setDraftField('tags', e.target.value, () => setField('tags', splitCsv(e.target.value)))} className={inputCls} disabled={readOnly} /></Field>
-                  <Field label="Arabic tags (comma separated)"><input value={getDraftValue('tags_ar', profile.tags_ar.join(', '))} onChange={(e) => setDraftField('tags_ar', e.target.value, () => setField('tags_ar', splitCsv(e.target.value)))} className={inputCls} dir="rtl" disabled={readOnly} /></Field>
+                  <Field label="Bio *"><textarea value={profile.bio || ''} onChange={(e) => setField('bio', e.target.value)} className={textareaCls} rows={4} disabled={readOnly} placeholder="Short public profile summary for the portal and request selection." /></Field>
+                  <Field label="Bio (Arabic)"><textarea value={profile.bio_ar || ''} onChange={(e) => setField('bio_ar', e.target.value)} className={textareaCls} rows={4} dir="rtl" disabled={readOnly} placeholder="نبذة قصيرة تظهر للعملاء داخل المنصة." /></Field>
+                  <Field label="English tags (comma separated)"><input value={getDraftValue('tags', profile.tags.join(', '))} onChange={(e) => setDraftField('tags', e.target.value, () => setField('tags', splitCsv(e.target.value)))} className={inputCls} disabled={readOnly} placeholder="TV host, entrepreneur, family content" /></Field>
+                  <Field label="Arabic tags (comma separated)"><input value={getDraftValue('tags_ar', profile.tags_ar.join(', '))} onChange={(e) => setDraftField('tags_ar', e.target.value, () => setField('tags_ar', splitCsv(e.target.value)))} className={inputCls} dir="rtl" disabled={readOnly} placeholder="مذيع، أعمال، محتوى عائلي" /></Field>
                 </div>
 
                 <div className="mt-6">
                   <p className="mb-3 text-sm font-semibold text-content-secondary">Social links</p>
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <Field label="Instagram"><input value={profile.social_links.instagram || ''} onChange={(e) => setField('social_links', { ...profile.social_links, instagram: e.target.value })} className={inputCls} disabled={readOnly} /></Field>
-                    <Field label="TikTok"><input value={profile.social_links.tiktok || ''} onChange={(e) => setField('social_links', { ...profile.social_links, tiktok: e.target.value })} className={inputCls} disabled={readOnly} /></Field>
-                    <Field label="Snapchat"><input value={profile.social_links.snapchat || ''} onChange={(e) => setField('social_links', { ...profile.social_links, snapchat: e.target.value })} className={inputCls} disabled={readOnly} /></Field>
-                    <Field label="X"><input value={profile.social_links.x || ''} onChange={(e) => setField('social_links', { ...profile.social_links, x: e.target.value })} className={inputCls} disabled={readOnly} /></Field>
-                    <Field label="YouTube"><input value={profile.social_links.youtube || ''} onChange={(e) => setField('social_links', { ...profile.social_links, youtube: e.target.value })} className={inputCls} disabled={readOnly} /></Field>
+                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                    <Field label="Instagram"><input type="url" value={profile.social_links.instagram || ''} onChange={(e) => setField('social_links', { ...profile.social_links, instagram: e.target.value })} className={inputCls} disabled={readOnly} placeholder="https://instagram.com/username" /></Field>
+                    <Field label="TikTok"><input type="url" value={profile.social_links.tiktok || ''} onChange={(e) => setField('social_links', { ...profile.social_links, tiktok: e.target.value })} className={inputCls} disabled={readOnly} placeholder="https://tiktok.com/@username" /></Field>
+                    <Field label="Snapchat"><input type="url" value={profile.social_links.snapchat || ''} onChange={(e) => setField('social_links', { ...profile.social_links, snapchat: e.target.value })} className={inputCls} disabled={readOnly} placeholder="https://snapchat.com/add/username" /></Field>
+                    <Field label="X"><input type="url" value={profile.social_links.x || ''} onChange={(e) => setField('social_links', { ...profile.social_links, x: e.target.value })} className={inputCls} disabled={readOnly} placeholder="https://x.com/username" /></Field>
+                    <Field label="YouTube"><input type="url" value={profile.social_links.youtube || ''} onChange={(e) => setField('social_links', { ...profile.social_links, youtube: e.target.value })} className={inputCls} disabled={readOnly} placeholder="https://youtube.com/@channel" /></Field>
                   </div>
                 </div>
 
@@ -743,30 +806,30 @@ export default function CelebrityProfileStepper({
 
             {step.key === 'restrictions' && (
               <>
-                <Field label="Allowed content categories *"><input value={getDraftValue('allowed_content_categories', profile.allowed_content_categories.join(', '))} onChange={(e) => setDraftField('allowed_content_categories', e.target.value, () => setField('allowed_content_categories', splitCsv(e.target.value)))} className={inputCls} disabled={readOnly} /></Field>
-                <div className="mt-4" />
-                <Field label="Prohibited industries *"><input value={getDraftValue('prohibited_industries', profile.prohibited_industries.join(', '))} onChange={(e) => setDraftField('prohibited_industries', e.target.value, () => setField('prohibited_industries', splitCsv(e.target.value)))} className={inputCls} disabled={readOnly} /></Field>
-                <div className="mt-4" />
-                <Field label="Competitor brand exclusions *"><input value={getDraftValue('competitor_brands', profile.competitor_brands.join(', '))} onChange={(e) => setDraftField('competitor_brands', e.target.value, () => setField('competitor_brands', splitCsv(e.target.value)))} className={inputCls} disabled={readOnly} /></Field>
+                <div className="grid gap-4 xl:grid-cols-3">
+                  <Field label="Allowed content categories *"><input value={getDraftValue('allowed_content_categories', profile.allowed_content_categories.join(', '))} onChange={(e) => setDraftField('allowed_content_categories', e.target.value, () => setField('allowed_content_categories', splitCsv(e.target.value)))} className={inputCls} disabled={readOnly} placeholder="Family content, lifestyle, education" /></Field>
+                  <Field label="Prohibited industries *"><input value={getDraftValue('prohibited_industries', profile.prohibited_industries.join(', '))} onChange={(e) => setDraftField('prohibited_industries', e.target.value, () => setField('prohibited_industries', splitCsv(e.target.value)))} className={inputCls} disabled={readOnly} placeholder="Alcohol, gambling, tobacco" /></Field>
+                  <Field label="Competitor brand exclusions *"><input value={getDraftValue('competitor_brands', profile.competitor_brands.join(', '))} onChange={(e) => setDraftField('competitor_brands', e.target.value, () => setField('competitor_brands', splitCsv(e.target.value)))} className={inputCls} disabled={readOnly} placeholder="Brand A, Brand B, Brand C" /></Field>
+                </div>
               </>
             )}
 
             {step.key === 'geography' && (
               <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Allowed regions"><input value={getDraftValue('allowed_regions', profile.geographic_availability.allowedRegions.join(', '))} onChange={(e) => setDraftField('allowed_regions', e.target.value, () => setField('geographic_availability', { ...profile.geographic_availability, allowedRegions: splitCsv(e.target.value) }))} className={inputCls} disabled={readOnly} /></Field>
-                <Field label="Restricted regions"><input value={getDraftValue('restricted_regions', profile.geographic_availability.restrictedRegions.join(', '))} onChange={(e) => setDraftField('restricted_regions', e.target.value, () => setField('geographic_availability', { ...profile.geographic_availability, restrictedRegions: splitCsv(e.target.value) }))} className={inputCls} disabled={readOnly} /></Field>
+                <Field label="Allowed regions"><input value={getDraftValue('allowed_regions', profile.geographic_availability.allowedRegions.join(', '))} onChange={(e) => setDraftField('allowed_regions', e.target.value, () => setField('geographic_availability', { ...profile.geographic_availability, allowedRegions: splitCsv(e.target.value) }))} className={inputCls} disabled={readOnly} placeholder="Saudi Arabia, UAE, Kuwait" /></Field>
+                <Field label="Restricted regions"><input value={getDraftValue('restricted_regions', profile.geographic_availability.restrictedRegions.join(', '))} onChange={(e) => setDraftField('restricted_regions', e.target.value, () => setField('geographic_availability', { ...profile.geographic_availability, restrictedRegions: splitCsv(e.target.value) }))} className={inputCls} disabled={readOnly} placeholder="United States, Europe" /></Field>
               </div>
             )}
 
             {step.key === 'tone' && (
               <>
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <Field label="Communication style *"><input value={profile.tone_style_preferences.communicationStyle} onChange={(e) => setField('tone_style_preferences', { ...profile.tone_style_preferences, communicationStyle: e.target.value })} className={inputCls} disabled={readOnly} /></Field>
-                  <Field label="Visual style *"><input value={profile.tone_style_preferences.visualStyle} onChange={(e) => setField('tone_style_preferences', { ...profile.tone_style_preferences, visualStyle: e.target.value })} className={inputCls} disabled={readOnly} /></Field>
+                  <Field label="Communication style *"><input value={profile.tone_style_preferences.communicationStyle} onChange={(e) => setField('tone_style_preferences', { ...profile.tone_style_preferences, communicationStyle: e.target.value })} className={inputCls} disabled={readOnly} placeholder="Warm, polished, family-friendly" /></Field>
+                  <Field label="Visual style *"><input value={profile.tone_style_preferences.visualStyle} onChange={(e) => setField('tone_style_preferences', { ...profile.tone_style_preferences, visualStyle: e.target.value })} className={inputCls} disabled={readOnly} placeholder="Clean studio, premium lighting, elegant wardrobe" /></Field>
                 </div>
                 <div className="mt-4 grid gap-4">
-                  <Field label="Endorsed topics *"><input value={getDraftValue('endorsed_topics', profile.tone_style_preferences.endorsedTopics.join(', '))} onChange={(e) => setDraftField('endorsed_topics', e.target.value, () => setField('tone_style_preferences', { ...profile.tone_style_preferences, endorsedTopics: splitCsv(e.target.value) }))} className={inputCls} disabled={readOnly} /></Field>
-                  <Field label="Personal restrictions"><textarea value={getDraftValue('personal_restrictions', profile.tone_style_preferences.personalRestrictions.join(', '))} onChange={(e) => setDraftField('personal_restrictions', e.target.value, () => setField('tone_style_preferences', { ...profile.tone_style_preferences, personalRestrictions: splitCsv(e.target.value) }))} className={textareaCls} rows={3} disabled={readOnly} /></Field>
+                  <Field label="Endorsed topics *"><input value={getDraftValue('endorsed_topics', profile.tone_style_preferences.endorsedTopics.join(', '))} onChange={(e) => setDraftField('endorsed_topics', e.target.value, () => setField('tone_style_preferences', { ...profile.tone_style_preferences, endorsedTopics: splitCsv(e.target.value) }))} className={inputCls} disabled={readOnly} placeholder="Family values, entrepreneurship, wellness" /></Field>
+                  <Field label="Personal restrictions"><textarea value={getDraftValue('personal_restrictions', profile.tone_style_preferences.personalRestrictions.join(', '))} onChange={(e) => setDraftField('personal_restrictions', e.target.value, () => setField('tone_style_preferences', { ...profile.tone_style_preferences, personalRestrictions: splitCsv(e.target.value) }))} className={textareaCls} rows={3} disabled={readOnly} placeholder="Political endorsements, religious messaging, risky stunts" /></Field>
                 </div>
               </>
             )}
@@ -821,11 +884,11 @@ export default function CelebrityProfileStepper({
                 />
                 {!profile.manager_settings.selfManaged && (
                   <div className="mt-4 grid gap-4">
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <Field label="Agency name"><input value={profile.manager_settings.agencyName} onChange={(e) => setField('manager_settings', { ...profile.manager_settings, agencyName: e.target.value })} className={inputCls} disabled={readOnly} /></Field>
-                      <Field label="Manager / agent name *"><input value={profile.manager_settings.managerName} onChange={(e) => setField('manager_settings', { ...profile.manager_settings, managerName: e.target.value })} className={inputCls} disabled={readOnly} /></Field>
-                      <Field label="Manager / agent email *"><input value={profile.manager_settings.managerEmail} onChange={(e) => setField('manager_settings', { ...profile.manager_settings, managerEmail: e.target.value })} className={inputCls} disabled={readOnly} /></Field>
-                      <Field label="Manager / agent phone"><input value={profile.manager_settings.managerPhone} onChange={(e) => setField('manager_settings', { ...profile.manager_settings, managerPhone: e.target.value })} inputMode="numeric" className={inputCls} disabled={readOnly} /></Field>
+                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                      <Field label="Agency name"><input value={profile.manager_settings.agencyName} onChange={(e) => setField('manager_settings', { ...profile.manager_settings, agencyName: e.target.value })} className={inputCls} disabled={readOnly} placeholder="Twinity Talent Management" /></Field>
+                      <Field label="Manager / agent name *"><input value={profile.manager_settings.managerName} onChange={(e) => setField('manager_settings', { ...profile.manager_settings, managerName: e.target.value })} className={inputCls} disabled={readOnly} placeholder="Sara Ahmed" /></Field>
+                      <Field label="Manager / agent email *"><input value={profile.manager_settings.managerEmail} onChange={(e) => setField('manager_settings', { ...profile.manager_settings, managerEmail: e.target.value })} className={inputCls} disabled={readOnly} placeholder="manager@agency.com" /></Field>
+                      <Field label="Manager / agent phone"><input value={profile.manager_settings.managerPhone} onChange={(e) => setField('manager_settings', { ...profile.manager_settings, managerPhone: sanitizePhone(e.target.value) })} inputMode="numeric" className={inputCls} disabled={readOnly} placeholder="9665XXXXXXXX" /></Field>
                     </div>
                     <Field label="Delegated permissions *">
                       <div className="grid gap-2 sm:grid-cols-2">
@@ -845,7 +908,18 @@ export default function CelebrityProfileStepper({
             {step.key === 'media' && (
               <>
                 <Field label="Approved media URLs *">
-                  <textarea value={profile.approved_media_urls.join('\n')} onChange={(e) => setField('approved_media_urls', e.target.value.split('\n').map((item) => item.trim()).filter(Boolean))} className={textareaCls} rows={5} disabled={readOnly} />
+                  <textarea
+                    value={getDraftValue('approved_media_urls', profile.approved_media_urls.join('\n'))}
+                    onChange={(e) =>
+                      setDraftField('approved_media_urls', e.target.value, () =>
+                        setField('approved_media_urls', parseFlexibleUrls(e.target.value)),
+                      )
+                    }
+                    className={textareaCls}
+                    rows={5}
+                    disabled={readOnly}
+                    placeholder={'https://example.com/media-1.mp4\nhttps://example.com/media-2.mp4\nor separate with commas'}
+                  />
                 </Field>
                 <div className="mt-4 grid gap-4 sm:grid-cols-2">
                   <Field label="Signed name *"><input value={profile.contract_acceptance.signedName} onChange={(e) => setField('contract_acceptance', { ...profile.contract_acceptance, signedName: e.target.value })} className={inputCls} disabled={readOnly} /></Field>
@@ -880,10 +954,6 @@ export default function CelebrityProfileStepper({
                 <ChevronLeft className="h-4 w-4" />
                 Back
               </button>
-              <button type="button" onClick={() => setStepIndex((current) => Math.min(STEPS.length - 1, current + 1))} disabled={stepIndex === STEPS.length - 1 || (scope === 'self' && Boolean(validateStep(step.key, profile)))} className="inline-flex items-center gap-2 rounded-xl border border-brand-purple/20 px-4 py-2.5 text-sm font-medium text-content-secondary transition-all hover:bg-surface-subtle disabled:cursor-not-allowed disabled:opacity-50">
-                Next
-                <ChevronRight className="h-4 w-4" />
-              </button>
             </div>
 
             {!readOnly && (
@@ -917,26 +987,6 @@ export default function CelebrityProfileStepper({
           </div>
         </div>
 
-        {!onClose && (
-          <div className="space-y-6">
-            <Section title="Unlock Checklist" description="These sections must be complete before the rest of the portal unlocks.">
-              <ChecklistItem done={checklist[0]}>Identity details</ChecklistItem>
-              <ChecklistItem done={checklist[1]}>Public profile basics</ChecklistItem>
-              <ChecklistItem done={checklist[2]}>Restrictions</ChecklistItem>
-              <ChecklistItem done={checklist[3]}>Geography</ChecklistItem>
-              <ChecklistItem done={checklist[4]}>Tone and topics</ChecklistItem>
-              <ChecklistItem done={checklist[5]}>Approval preferences</ChecklistItem>
-              <ChecklistItem done={checklist[6]}>Manager setup</ChecklistItem>
-              <ChecklistItem done={checklist[7]}>Media and contract</ChecklistItem>
-            </Section>
-
-            <Section title="Portal Logic" description="Orders unlock only after profile submission and superadmin activation.">
-              <p className="text-sm leading-6 text-content-muted">
-                Save each section to keep your work in sync. The final submit sends the completed profile to superadmin for review instead of unlocking orders immediately.
-              </p>
-            </Section>
-          </div>
-        )}
       </div>
     </div>
   )

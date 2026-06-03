@@ -360,7 +360,7 @@ export const adminApi = {
   updateMember:   (id: string, body: object) => req(`/admin/team/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
   deleteMember:   (id: string) => req(`/admin/team/${id}`, { method: 'DELETE' }),
 
-  managers:       () => req<{ success: boolean; data: Array<AdminSession & { celebrity_links?: Array<{ celebrity: { id: string; name: string }; permissions: string[] }> }> }>('/admin/celebrity-managers/managers'),
+  managers:       () => req<{ success: boolean; data: Array<AdminSession & { celebrity_links?: Array<{ id: string; is_active: boolean; notes?: string | null; celebrity: { id: string; name: string }; permissions: string[] }> }> }>('/admin/celebrity-managers/managers'),
   createManager:  (body: object) => req('/admin/celebrity-managers/managers', { method: 'POST', body: JSON.stringify(body) }),
   managerDashboardOverview: (mode: PortalMode = getPortalMode()) => req<{ success: boolean } & ManagerDashboardOverview>(`${getDashboardPrefix(mode)}/overview`),
   managerDashboardRequests: (params = '', mode: PortalMode = getPortalMode()) => req<{ success: boolean; data: ManagerDashboardRequest[]; total: number; page: number; pages: number }>(`${getDashboardPrefix(mode)}/requests${params ? `?${params}` : ''}`),

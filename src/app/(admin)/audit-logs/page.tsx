@@ -32,6 +32,8 @@ export default function AuditLogsPage() {
   const [loading, setLoading]       = useState(true)
   const [search, setSearch]         = useState('')
   const [targetType, setTargetType] = useState('all')
+  const [startDate, setStartDate]   = useState('')
+  const [endDate, setEndDate]       = useState('')
   const [page, setPage]             = useState(1)
   const limit = 30
 
@@ -42,13 +44,15 @@ export default function AuditLogsPage() {
     const params = new URLSearchParams({ page: String(page), limit: String(limit) })
     if (debouncedSearch) params.set('action', debouncedSearch)
     if (targetType !== 'all') params.set('targetType', targetType)
+    if (startDate) params.set('from', `${startDate}T00:00:00.000`)
+    if (endDate) params.set('to', `${endDate}T23:59:59.999`)
     adminApi.auditLogs(params.toString())
       .then((res: any) => { setLogs(res.logs || []); setTotal(res.total || 0) })
       .catch(() => null)
       .finally(() => setLoading(false))
-  }, [debouncedSearch, targetType, page])
+  }, [debouncedSearch, targetType, startDate, endDate, page])
 
-  useEffect(() => { setPage(1) }, [debouncedSearch, targetType])
+  useEffect(() => { setPage(1) }, [debouncedSearch, targetType, startDate, endDate])
   useEffect(() => { fetchLogs() }, [fetchLogs])
 
   const totalPages = Math.ceil(total / limit)
@@ -83,6 +87,28 @@ export default function AuditLogsPage() {
             </button>
           ))}
         </div>
+        <input
+          type="date"
+          value={startDate}
+          onChange={(e) => setStartDate(e.target.value)}
+          className="px-3 py-2 rounded-xl border border-brand-purple/20 text-sm outline-none focus:border-brand-purple bg-white text-content-primary transition-colors"
+        />
+        <input
+          type="date"
+          value={endDate}
+          onChange={(e) => setEndDate(e.target.value)}
+          min={startDate || undefined}
+          className="px-3 py-2 rounded-xl border border-brand-purple/20 text-sm outline-none focus:border-brand-purple bg-white text-content-primary transition-colors"
+        />
+        {(startDate || endDate) && (
+          <button
+            type="button"
+            onClick={() => { setStartDate(''); setEndDate('') }}
+            className="px-3.5 py-2 rounded-xl border border-brand-purple/20 text-xs font-semibold text-content-secondary hover:border-brand-purple/40 hover:text-brand-purple transition-colors"
+          >
+            Clear dates
+          </button>
+        )}
       </div>
 
       <div className="bg-white rounded-2xl border border-brand-purple/12 shadow-card overflow-hidden">
