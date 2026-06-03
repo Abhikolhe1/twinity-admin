@@ -75,6 +75,8 @@ export type AdminSession = {
     id: string
     name: string
     onboarding_status?: string
+    is_active?: boolean
+    review_notes?: string | null
     thumbnail_url?: string | null
   } | null
 }
@@ -320,6 +322,11 @@ export const adminApi = {
   rejectCelebrityApplication: (id: string, note: string) => req(`/admin/celebrity-applications/${id}/reject`, { method: 'POST', body: JSON.stringify({ note }) }),
   getMyCelebrityProfile: () => req<{ success: boolean; data: Record<string, unknown>; templates: CelebrityPortalTemplate[] }>('/admin/celebrity/profile'),
   saveMyCelebrityProfile: (body: object) => req('/admin/celebrity/profile', { method: 'PUT', body: JSON.stringify(body) }),
+  submitMyCelebrityProfile: () => req('/admin/celebrity/profile/submit', { method: 'POST' }),
+  getCelebrityProfileByAdmin: (id: string) => req<{ success: boolean; data: Record<string, unknown>; templates: CelebrityPortalTemplate[] }>(`/admin/celebrities/${id}/profile`),
+  saveCelebrityProfileByAdmin: (id: string, body: object) => req(`/admin/celebrities/${id}/profile`, { method: 'PUT', body: JSON.stringify(body) }),
+  requestCelebrityProfileChanges: (id: string, note: string) => req(`/admin/celebrities/${id}/profile/request-changes`, { method: 'POST', body: JSON.stringify({ note }) }),
+  activateCelebrityProfile: (id: string) => req(`/admin/celebrities/${id}/profile/activate`, { method: 'POST' }),
 
   getSettings:    () => req('/admin/settings'),
   saveSettings:   (body: object) => req('/admin/settings', { method: 'PUT', body: JSON.stringify(body) }),

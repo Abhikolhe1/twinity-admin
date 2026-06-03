@@ -1,33 +1,21 @@
 'use client'
 
-import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
-import { usePathname } from 'next/navigation'
 import { Search } from 'lucide-react'
 import { adminApi, type ManagerDashboardOverview, type ManagerDashboardRequest } from '@/lib/api'
 import { usePermissions } from '@/lib/permissions-context'
+import RejectReasonModal from '@/components/RejectReasonModal'
 
 type StatusFilter = 'all' | 'pending' | 'review' | 'breached' | 'delivered' | 'failed'
 
-function promptRejectReason(): string | null {
-  const input = window.prompt('Add rejection reason')
-  if (input === null) return null
-  const reason = input.trim()
-  if (!reason) {
-    window.alert('Reject reason is required')
-    return null
-  }
-  return reason
-}
-
 export default function ManagerRequestsPage() {
-  const pathname = usePathname()
   const permissions = usePermissions()
   const [requests, setRequests] = useState<ManagerDashboardRequest[]>([])
   const [overview, setOverview] = useState<ManagerDashboardOverview | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [actingRequestId, setActingRequestId] = useState<string | null>(null)
+  const [rejectRequestId, setRejectRequestId] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [celebrityId, setCelebrityId] = useState('all')
   const [status, setStatus] = useState<StatusFilter>('all')
@@ -73,14 +61,13 @@ export default function ManagerRequestsPage() {
     }
   }
 
-  async function rejectRequest(jobId: string) {
-    const note = promptRejectReason()
-    if (note === null) return
+  async function rejectRequest(jobId: string, note: string) {
     setActingRequestId(jobId)
     setError('')
     try {
       await adminApi.managerRejectJob(jobId, note)
       await load()
+      setRejectRequestId(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to reject request')
     } finally {
@@ -103,11 +90,6 @@ export default function ManagerRequestsPage() {
         <p className="mt-1 text-sm text-content-muted">
           Review every request across all linked celebrities with search and targeted filters.
         </p>
-      </div>
-
-      <div className="mb-6 flex flex-wrap gap-2">
-        <ManagerTab href="/manager/dashboard" label="Overview" active={pathname === '/manager/dashboard'} />
-        <ManagerTab href="/manager/requests" label="All Requests" active={pathname === '/manager/requests'} />
       </div>
 
       {error && (
@@ -225,7 +207,7 @@ export default function ManagerRequestsPage() {
                           {permissions.includes('reject_requests') && (
                             <button
                               type="button"
-                              onClick={() => rejectRequest(request.id)}
+                              onClick={() => setRejectRequestId(request.id)}
                               disabled={actingRequestId === request.id}
                               className="rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 disabled:opacity-60"
                             >
@@ -247,20 +229,14 @@ export default function ManagerRequestsPage() {
           </table>
         </div>
       </section>
-    </div>
-  )
-}
 
-function ManagerTab({ href, label, active }: { href: string; label: string; active: boolean }) {
-  return (
-    <Link
-      href={href}
-      className={`rounded-full px-4 py-2 text-sm font-semibold transition-all ${
-        active ? 'bg-brand-purple text-white' : 'border border-brand-purple/20 bg-white text-content-secondary hover:bg-surface-subtle'
-      }`}
-    >
-      {label}
-    </Link>
+      <RejectReasonModal
+        open={Boolean(rejectRequestId)}
+        loading={Boolean(rejectRequestId && actingRequestId === rejectRequestId)}
+        onClose={() => setRejectRequestId(null)}
+        onSubmit={(reason) => rejectRequest(rejectRequestId!, reason)}
+      />
+    </div>
   )
 }
 

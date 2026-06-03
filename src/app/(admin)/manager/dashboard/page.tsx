@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
 import { AlertTriangle, Clock3, RefreshCw, Save, ShieldCheck, Users2 } from 'lucide-react'
 import {
   adminApi,
@@ -12,6 +11,7 @@ import {
   type ManagerDashboardTemplate,
 } from '@/lib/api'
 import { usePermissions } from '@/lib/permissions-context'
+import RejectReasonModal from '@/components/RejectReasonModal'
 
 type AuditLog = {
   id: string
@@ -26,19 +26,7 @@ type AuditLog = {
 
 type RequestFilter = 'all' | 'pending' | 'review' | 'breached'
 
-function promptRejectReason(): string | null {
-  const input = window.prompt('Add rejection reason')
-  if (input === null) return null
-  const reason = input.trim()
-  if (!reason) {
-    window.alert('Reject reason is required')
-    return null
-  }
-  return reason
-}
-
 export default function ManagerDashboardPage() {
-  const pathname = usePathname()
   const permissions = usePermissions()
   const [overview, setOverview] = useState<ManagerDashboardOverview | null>(null)
   const [requests, setRequests] = useState<ManagerDashboardRequest[]>([])
@@ -51,6 +39,7 @@ export default function ManagerDashboardPage() {
   const [savingCelebrityId, setSavingCelebrityId] = useState<string | null>(null)
   const [actingRequestId, setActingRequestId] = useState<string | null>(null)
   const [error, setError] = useState('')
+  const [rejectRequestId, setRejectRequestId] = useState<string | null>(null)
 
   async function load() {
     setError('')
@@ -115,14 +104,13 @@ export default function ManagerDashboardPage() {
     }
   }
 
-  async function rejectRequest(jobId: string) {
-    const note = promptRejectReason()
-    if (note === null) return
+  async function rejectRequest(jobId: string, note: string) {
     setActingRequestId(jobId)
     setError('')
     try {
       await adminApi.managerRejectJob(jobId, note)
       await load()
+      setRejectRequestId(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to reject request')
     } finally {
@@ -157,11 +145,6 @@ export default function ManagerDashboardPage() {
           <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
           {refreshing ? 'Refreshing...' : 'Refresh dashboard'}
         </button>
-      </div>
-
-      <div className="mb-6 flex flex-wrap gap-2">
-        <ManagerTab href="/manager/dashboard" label="Overview" active={pathname === '/manager/dashboard'} />
-        <ManagerTab href="/manager/requests" label="All Requests" active={pathname === '/manager/requests'} />
       </div>
 
       {error && (
@@ -316,10 +299,10 @@ export default function ManagerDashboardPage() {
                                 {permissions.includes('reject_requests') && (
                                   <button
                                     type="button"
-                                    onClick={() => rejectRequest(request.id)}
-                                    disabled={actingRequestId === request.id}
-                                    className="rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 disabled:opacity-60"
-                                  >
+                              onClick={() => setRejectRequestId(request.id)}
+                              disabled={actingRequestId === request.id}
+                              className="rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 disabled:opacity-60"
+                            >
                                     Reject
                                   </button>
                                 )}
@@ -373,20 +356,14 @@ export default function ManagerDashboardPage() {
           </Card>
         </div>
       )}
-    </div>
-  )
-}
 
-function ManagerTab({ href, label, active }: { href: string; label: string; active: boolean }) {
-  return (
-    <Link
-      href={href}
-      className={`rounded-full px-4 py-2 text-sm font-semibold transition-all ${
-        active ? 'bg-brand-purple text-white' : 'border border-brand-purple/20 bg-white text-content-secondary hover:bg-surface-subtle'
-      }`}
-    >
-      {label}
-    </Link>
+      <RejectReasonModal
+        open={Boolean(rejectRequestId)}
+        loading={Boolean(rejectRequestId && actingRequestId === rejectRequestId)}
+        onClose={() => setRejectRequestId(null)}
+        onSubmit={(reason) => rejectRequest(rejectRequestId!, reason)}
+      />
+    </div>
   )
 }
 

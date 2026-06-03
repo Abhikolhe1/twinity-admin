@@ -5,6 +5,7 @@ import { adminApi } from '@/lib/api'
 import Spinner, { PageLoader } from '@/components/ui/Spinner'
 import { useDebounce } from '@/lib/hooks'
 import { usePermissions } from '@/lib/permissions-context'
+import ConfirmActionModal from '@/components/ConfirmActionModal'
 
 const MANAGER_PERMISSIONS = [
   'approve_requests',
@@ -308,6 +309,7 @@ function LinkRow({ link, onUpdated, canManage }: { link: ManagerLink; onUpdated:
   const [expanded, setExpanded] = useState(false)
   const [saving, setSaving] = useState(false)
   const [permissions, setPermissions] = useState<string[]>(link.permissions ?? [])
+  const [confirmRemoveOpen, setConfirmRemoveOpen] = useState(false)
 
   function togglePerm(permission: string) {
     setPermissions((current) => current.includes(permission) ? current.filter((value) => value !== permission) : [...current, permission])
@@ -334,10 +336,10 @@ function LinkRow({ link, onUpdated, canManage }: { link: ManagerLink; onUpdated:
   }
 
   async function handleRemove() {
-    if (!confirm(`Remove ${link.manager?.name || 'this manager'} from this celebrity?`)) return
     setSaving(true)
     try {
       await adminApi.removeCelebrityManager(link.celebrity_id, link.id)
+      setConfirmRemoveOpen(false)
       onUpdated()
     } finally {
       setSaving(false)
@@ -368,7 +370,7 @@ function LinkRow({ link, onUpdated, canManage }: { link: ManagerLink; onUpdated:
                 {saving ? <Spinner size="sm" /> : link.is_active ? <Link2Off className="w-3.5 h-3.5" /> : <Link2 className="w-3.5 h-3.5" />}
                 {link.is_active ? 'Deactivate' : 'Reactivate'}
               </button>
-              <button onClick={handleRemove} disabled={saving} className="text-red-500 hover:text-red-700 transition-colors p-1.5 rounded-lg hover:bg-red-50">
+              <button onClick={() => setConfirmRemoveOpen(true)} disabled={saving} className="text-red-500 hover:text-red-700 transition-colors p-1.5 rounded-lg hover:bg-red-50">
                 <X className="w-4 h-4" />
               </button>
             </>
@@ -391,6 +393,17 @@ function LinkRow({ link, onUpdated, canManage }: { link: ManagerLink; onUpdated:
           </button>
         </div>
       )}
+
+      <ConfirmActionModal
+        open={confirmRemoveOpen}
+        title="Remove manager link"
+        message={`Remove ${link.manager?.name || 'this manager'} from this celebrity?`}
+        confirmLabel="Remove"
+        tone="danger"
+        loading={saving}
+        onClose={() => setConfirmRemoveOpen(false)}
+        onConfirm={handleRemove}
+      />
     </div>
   )
 }

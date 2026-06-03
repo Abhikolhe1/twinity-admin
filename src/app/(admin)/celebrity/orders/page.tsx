@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { adminApi } from '@/lib/api'
+import RejectReasonModal from '@/components/RejectReasonModal'
 
 type Job = {
   id: string
@@ -14,22 +15,12 @@ type Job = {
   user?: { name: string; email: string }
 }
 
-function promptRejectReason(): string | null {
-  const input = window.prompt('Add rejection reason')
-  if (input === null) return null
-  const reason = input.trim()
-  if (!reason) {
-    window.alert('Reject reason is required')
-    return null
-  }
-  return reason
-}
-
 export default function CelebrityOrdersPage() {
   const [jobs, setJobs] = useState<Job[]>([])
   const [loading, setLoading] = useState(true)
   const [actingJobId, setActingJobId] = useState<string | null>(null)
   const [error, setError] = useState('')
+  const [rejectJobId, setRejectJobId] = useState<string | null>(null)
 
   async function loadJobs() {
     const res = await adminApi.celebrityJobs() as { data?: Job[] }
@@ -55,14 +46,13 @@ export default function CelebrityOrdersPage() {
     }
   }
 
-  async function rejectJob(jobId: string) {
-    const note = promptRejectReason()
-    if (note === null) return
+  async function rejectJob(jobId: string, note: string) {
     setActingJobId(jobId)
     setError('')
     try {
       await adminApi.celebrityRejectJob(jobId, note)
       await loadJobs()
+      setRejectJobId(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to reject request')
     } finally {
@@ -128,7 +118,7 @@ export default function CelebrityOrdersPage() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => rejectJob(job.id)}
+                      onClick={() => setRejectJobId(job.id)}
                       disabled={actingJobId === job.id}
                       className="rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 disabled:opacity-60"
                     >
@@ -143,6 +133,13 @@ export default function CelebrityOrdersPage() {
           ))
         )}
       </div>
+
+      <RejectReasonModal
+        open={Boolean(rejectJobId)}
+        loading={Boolean(rejectJobId && actingJobId === rejectJobId)}
+        onClose={() => setRejectJobId(null)}
+        onSubmit={(reason) => rejectJob(rejectJobId!, reason)}
+      />
     </div>
   )
 }

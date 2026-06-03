@@ -23,6 +23,7 @@ const NAV = [
 
 const ADMIN_NAV = [
   { href: '/manager/dashboard',   label: 'Manager Desk',       icon: LayoutDashboard, permission: 'manager.dashboard.view' },
+  { href: '/manager/requests',    label: 'All Requests',       icon: ClipboardList,   permission: 'manager.dashboard.view' },
   { href: '/team',                label: 'Team',               icon: Users2,      permission: 'team.view' },
   { href: '/roles',               label: 'Roles',              icon: ShieldCheck, permission: 'roles.view' },
   { href: '/celebrity-managers',  label: 'Celeb. Managers',   icon: Link2,       permission: 'celebrity_managers.view' },
@@ -63,9 +64,9 @@ export default function Sidebar({ open, collapsed, onClose }: SidebarProps) {
   return (
     <aside
       className={[
-        'fixed lg:relative inset-y-0 left-0 z-30',
+        'fixed inset-y-0 left-0 z-30 lg:sticky lg:top-0',
         'flex flex-col bg-white border-r border-brand-purple/10 shadow-sm',
-        'transition-all duration-300 min-h-screen shrink-0',
+        'h-screen shrink-0 overflow-hidden transition-all duration-300',
         open ? 'translate-x-0' : '-translate-x-full lg:translate-x-0',
         collapsed ? 'lg:w-16 w-56' : 'w-56',
       ].join(' ')}
