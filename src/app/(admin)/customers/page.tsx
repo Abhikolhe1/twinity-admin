@@ -1,6 +1,6 @@
 'use client'
-import { useEffect, useState, useCallback } from 'react'
-import { Search, UserCheck, UserX, Mail, KeyRound, ClipboardList, X } from 'lucide-react'
+import { useEffect, useState, useCallback, useRef } from 'react'
+import { Search, UserCheck, UserX, Mail, KeyRound, ClipboardList, X, Eye, Pencil, MoreHorizontal } from 'lucide-react'
 import { adminApi } from '@/lib/api'
 import Spinner, { PageLoader } from '@/components/ui/Spinner'
 import { useDebounce } from '@/lib/hooks'
@@ -300,12 +300,26 @@ export default function UsersPage() {
   const [suspending, setSuspending]   = useState(false)
   const [auditTarget, setAuditTarget] = useState<any | null>(null)
   const [profileTarget, setProfileTarget] = useState<{ id: string; mode: 'view' | 'edit' } | null>(null)
+  const [openActionMenu, setOpenActionMenu] = useState<string | null>(null)
+  const actionMenuRef = useRef<HTMLDivElement | null>(null)
 
   const permissions = usePermissions()
   const canManage   = permissions.includes('users.manage')
   const canAudit    = permissions.includes('audit_logs.view')
 
   const debouncedSearch = useDebounce(search, 300)
+
+  useEffect(() => {
+    function handlePointerDown(event: MouseEvent) {
+      if (!actionMenuRef.current) return
+      if (!actionMenuRef.current.contains(event.target as Node)) {
+        setOpenActionMenu(null)
+      }
+    }
+
+    document.addEventListener('mousedown', handlePointerDown)
+    return () => document.removeEventListener('mousedown', handlePointerDown)
+  }, [])
 
   const fetchUsers = useCallback(() => {
     setLoading(true)
@@ -344,7 +358,7 @@ export default function UsersPage() {
     setSuspending(false)
   }
 
-  const colCount = 8 + (canManage ? 1 : 0) + (canAudit ? 1 : 0)
+  const colCount = 8 + (canAudit ? 1 : 0)
 
   return (
     <div className="p-8">
@@ -401,9 +415,9 @@ export default function UsersPage() {
         <table className="w-full">
           <thead>
             <tr className="border-b border-brand-purple/8">
-              {['Customer', 'Email', 'Auth', 'Status', 'Verified', 'Last Login', 'Joined', 'Profile',
+              {['Customer', 'Email', 'Auth', 'Status', 'Verified', 'Last Login', 'Joined',
                 ...(canAudit  ? ['Activity'] : []),
-                ...(canManage ? ['Actions']  : []),
+                'Actions',
               ].map(h => (
                 <th key={h} className="px-5 py-3.5 text-left text-xs font-semibold text-content-muted uppercase tracking-wide">{h}</th>
               ))}
@@ -453,24 +467,6 @@ export default function UsersPage() {
                   </td>
                   <td className="px-5 py-3.5 text-xs text-content-muted">{fmt(user.last_login_at)}</td>
                   <td className="px-5 py-3.5 text-xs text-content-muted">{fmt(user.created_at)}</td>
-                  <td className="px-5 py-3.5">
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        onClick={() => setProfileTarget({ id: user.id, mode: 'view' })}
-                        className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-brand-purple/20 text-content-secondary hover:border-brand-purple/40 hover:text-brand-purple transition-all"
-                      >
-                        View
-                      </button>
-                      {canManage && (
-                        <button
-                          onClick={() => setProfileTarget({ id: user.id, mode: 'edit' })}
-                          className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-brand-purple/20 text-content-secondary hover:border-brand-purple/40 hover:text-brand-purple transition-all"
-                        >
-                          Edit
-                        </button>
-                      )}
-                    </div>
-                  </td>
                   {canAudit && (
                     <td className="px-5 py-3.5">
                       <button
@@ -481,34 +477,86 @@ export default function UsersPage() {
                       </button>
                     </td>
                   )}
-                  {canManage && (
-                    <td className="px-5 py-3.5">
-                      <div className="flex items-center gap-1.5">
-                        {user.status === 'pending' && (
+                  <td className="px-5 py-3.5">
+                    <div className="relative flex justify-center" ref={openActionMenu === user.id ? actionMenuRef : null}>
+                      <button
+                        type="button"
+                        onClick={() => setOpenActionMenu((current) => current === user.id ? null : user.id)}
+                        className="inline-flex items-center justify-center rounded-lg border border-brand-purple/20 p-2 text-content-secondary transition-all hover:border-brand-purple/40 hover:text-brand-purple"
+                        aria-label="Open customer actions"
+                      >
+                        <MoreHorizontal className="h-4 w-4" />
+                      </button>
+
+                      {openActionMenu === user.id && (
+                        <div className="absolute right-0 top-full z-20 mt-2 w-44 rounded-xl border border-brand-purple/12 bg-white p-2 shadow-xl">
                           <button
-                            onClick={() => handleSetStatus(user.id, 'active')}
-                            disabled={busy}
-                            className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-all disabled:opacity-60 disabled:cursor-not-allowed">
-                            {busy ? <Spinner size="sm" /> : <UserCheck className="w-3.5 h-3.5" />}
-                            Activate
+                            type="button"
+                            onClick={() => {
+                              setProfileTarget({ id: user.id, mode: 'view' })
+                              setOpenActionMenu(null)
+                            }}
+                            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-content-secondary transition-all hover:bg-surface-subtle hover:text-brand-purple"
+                          >
+                            <Eye className="h-4 w-4" />
+                            View
                           </button>
-                        )}
-                        {user.status !== 'pending' && (
-                          <button
-                            onClick={() => user.status === 'blocked' ? handleSetStatus(user.id, 'active') : setSuspendTarget(user)}
-                            disabled={busy}
-                            className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg transition-all disabled:opacity-60 disabled:cursor-not-allowed ${
-                              user.status === 'blocked'
-                                ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
-                                : 'bg-red-50 text-red-600 hover:bg-red-100'
-                            }`}>
-                            {busy ? <Spinner size="sm" /> : user.status === 'blocked' ? <UserCheck className="w-3.5 h-3.5" /> : <UserX className="w-3.5 h-3.5" />}
-                            {user.status === 'blocked' ? 'Unblock' : 'Block'}
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  )}
+
+                          {canManage && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setProfileTarget({ id: user.id, mode: 'edit' })
+                                setOpenActionMenu(null)
+                              }}
+                              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-content-secondary transition-all hover:bg-surface-subtle hover:text-brand-purple"
+                            >
+                              <Pencil className="h-4 w-4" />
+                              Edit
+                            </button>
+                          )}
+
+                          {canManage && user.status === 'pending' && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setOpenActionMenu(null)
+                                handleSetStatus(user.id, 'active')
+                              }}
+                              disabled={busy}
+                              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-emerald-700 transition-all hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              {busy ? <Spinner size="sm" /> : <UserCheck className="h-4 w-4" />}
+                              Activate
+                            </button>
+                          )}
+
+                          {canManage && user.status !== 'pending' && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setOpenActionMenu(null)
+                                if (user.status === 'blocked') {
+                                  handleSetStatus(user.id, 'active')
+                                } else {
+                                  setSuspendTarget(user)
+                                }
+                              }}
+                              disabled={busy}
+                              className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm transition-all disabled:cursor-not-allowed disabled:opacity-60 ${
+                                user.status === 'blocked'
+                                  ? 'text-emerald-700 hover:bg-emerald-50'
+                                  : 'text-red-600 hover:bg-red-50'
+                              }`}
+                            >
+                              {busy ? <Spinner size="sm" /> : user.status === 'blocked' ? <UserCheck className="h-4 w-4" /> : <UserX className="h-4 w-4" />}
+                              {user.status === 'blocked' ? 'Unblock' : 'Block'}
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </td>
                 </tr>
               )
             })}

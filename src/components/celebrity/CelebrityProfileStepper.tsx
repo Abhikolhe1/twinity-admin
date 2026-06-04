@@ -1,8 +1,8 @@
 'use client'
 
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { ChevronLeft, ChevronRight, Loader2, X } from 'lucide-react'
-import { adminApi, type CelebrityPortalTemplate } from '@/lib/api'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { ChevronLeft, ImagePlus, Loader2, Trash2, Upload, X } from 'lucide-react'
+import { adminApi, type CelebrityPortalTemplate, type ManagerDirectoryEntry } from '@/lib/api'
 
 const AVATAR_COLORS = [
   'linear-gradient(135deg, #9a78fe, #422266)',
@@ -58,6 +58,7 @@ type ManagerSettings = {
   managerEmail: string
   managerPhone: string
   permissions: string[]
+  selectedManagerId?: string
 }
 
 type ContractAcceptance = {
@@ -180,6 +181,7 @@ const DEFAULT_PROFILE: Profile = {
     managerEmail: '',
     managerPhone: '',
     permissions: [],
+    selectedManagerId: '',
   },
   approved_media_urls: [],
   contract_acceptance: {
@@ -214,6 +216,23 @@ function isValidUrl(value: string): boolean {
   } catch {
     return false
   }
+}
+
+function isDataUrl(value: string): boolean {
+  return value.startsWith('data:')
+}
+
+function isValidAssetReference(value: string): boolean {
+  return isDataUrl(value) || isValidUrl(value)
+}
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result || ''))
+    reader.onerror = () => reject(new Error('Failed to read file'))
+    reader.readAsDataURL(file)
+  })
 }
 
 function parseFlexibleUrls(value: string): string[] {
@@ -277,6 +296,7 @@ function normalizeProfile(input: any): Profile {
       ...DEFAULT_PROFILE.manager_settings,
       ...(input.manager_settings ?? {}),
       permissions: Array.isArray(input.manager_settings?.permissions) ? input.manager_settings.permissions : [],
+      selectedManagerId: String(input.manager_settings?.selectedManagerId || ''),
     },
     approved_media_urls: Array.isArray(input.approved_media_urls) ? input.approved_media_urls : [],
     contract_acceptance: {
@@ -353,8 +373,8 @@ function validateStep(step: StepKey, profile: Profile): string | null {
     if (profile.contact_email && !isValidEmail(profile.contact_email)) return 'Enter a valid portal email.'
     if (profile.contact_phone && !isDigitsOnly(profile.contact_phone)) return 'Phone number must contain digits only.'
     if (!profile.languages.length) return 'At least one language is required.'
-    if (!profile.thumbnail_url?.trim()) return 'Profile image URL is required.'
-    if (profile.thumbnail_url && !isValidUrl(profile.thumbnail_url)) return 'Enter a valid profile image URL.'
+    if (!profile.thumbnail_url?.trim()) return 'Profile image is required.'
+    if (profile.thumbnail_url && !isValidAssetReference(profile.thumbnail_url)) return 'Enter a valid profile image URL or upload an image.'
     if (!profile.bio?.trim()) return 'Bio is required.'
     if (!Object.values(profile.social_links).some(Boolean)) return 'At least one social link is required.'
     for (const [platform, url] of Object.entries(profile.social_links)) {
@@ -400,7 +420,7 @@ function validateStep(step: StepKey, profile: Profile): string | null {
   if (step === 'media') {
     if (!profile.approved_media_urls.length) return 'Add at least one approved media URL.'
     for (const mediaUrl of profile.approved_media_urls) {
-      if (!isValidUrl(mediaUrl)) return 'Each approved media entry must be a valid URL.'
+      if (!isValidAssetReference(mediaUrl)) return 'Each approved media entry must be a valid URL or uploaded file.'
     }
     if (!profile.contract_acceptance.accepted) return 'Contract acceptance is required.'
     if (!profile.contract_acceptance.signedName.trim()) return 'Signed name is required.'
@@ -417,6 +437,7 @@ export default function CelebrityProfileStepper({
 }: CelebrityProfileStepperProps) {
   const [profile, setProfile] = useState<Profile | null>(null)
   const [templates, setTemplates] = useState<CelebrityPortalTemplate[]>([])
+  const [availableManagers, setAvailableManagers] = useState<ManagerDirectoryEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -426,6 +447,8 @@ export default function CelebrityProfileStepper({
   const [reviewNote, setReviewNote] = useState('')
   const [draftFields, setDraftFields] = useState<Record<string, string>>({})
   const [completedSteps, setCompletedSteps] = useState<boolean[]>(() => Array.from({ length: STEPS.length }, () => false))
+  const imageInputRef = useRef<HTMLInputElement>(null)
+  const approvedMediaInputRef = useRef<HTMLInputElement>(null)
 
   const step = STEPS[stepIndex]
 
@@ -435,14 +458,26 @@ export default function CelebrityProfileStepper({
       setLoading(true)
       setError('')
       try {
-        const res = scope === 'self'
-          ? await adminApi.getMyCelebrityProfile()
-          : await adminApi.getCelebrityProfileByAdmin(celebrityId!)
+        const [res, managersRes] = await Promise.all([
+          scope === 'self'
+            ? adminApi.getMyCelebrityProfile()
+            : adminApi.getCelebrityProfileByAdmin(celebrityId!),
+          scope === 'admin'
+            ? adminApi.managers()
+            : adminApi.getProfileManagers(),
+        ])
         if (cancelled) return
         const normalized = normalizeProfile(res.data)
         const savedSteps = deriveSavedSteps(normalized)
         setProfile(normalized)
         setTemplates(res.templates ?? [])
+        setAvailableManagers((managersRes.data || []).map((manager) => ({
+          id: manager.id,
+          name: manager.name,
+          email: manager.email,
+          phone: manager.phone ?? '',
+          agency_name: manager.agency_name ?? '',
+        })))
         setReviewNote(String((res.data as any).review_notes || ''))
         setCompletedSteps(savedSteps)
         setStepIndex(getResumeStepIndex(savedSteps))
@@ -512,6 +547,48 @@ export default function CelebrityProfileStepper({
         },
       }
     })
+  }
+
+  function applyExistingManager(managerId: string) {
+    if (!profile) return
+    const selectedManager = availableManagers.find((manager) => manager.id === managerId)
+    if (!selectedManager) return
+
+    setField('manager_settings', {
+      ...profile.manager_settings,
+      selfManaged: false,
+      agencyName: selectedManager.agency_name || '',
+      managerName: selectedManager.name || '',
+      managerEmail: selectedManager.email || '',
+      managerPhone: selectedManager.phone || '',
+      selectedManagerId: selectedManager.id,
+    })
+  }
+
+  async function handleThumbnailFileChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    if (!file) return
+    try {
+      const dataUrl = await readFileAsDataUrl(file)
+      setField('thumbnail_url', dataUrl)
+    } catch (err: any) {
+      setError(err.message || 'Failed to read image file')
+    } finally {
+      event.target.value = ''
+    }
+  }
+
+  async function handleApprovedMediaFileChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.target.files || [])
+    if (files.length === 0) return
+    try {
+      const dataUrls = await Promise.all(files.map((file) => readFileAsDataUrl(file)))
+      setProfile((current) => current ? { ...current, approved_media_urls: [...current.approved_media_urls, ...dataUrls] } : current)
+    } catch (err: any) {
+      setError(err.message || 'Failed to read media file')
+    } finally {
+      event.target.value = ''
+    }
   }
 
   async function saveSection(goNext = false) {
@@ -734,7 +811,69 @@ export default function CelebrityProfileStepper({
                 </div>
 
                 <div className="mt-4 grid gap-4">
-                  <Field label="Profile image URL *"><input type="url" value={profile.thumbnail_url || ''} onChange={(e) => setField('thumbnail_url', e.target.value)} className={inputCls} disabled={readOnly} placeholder="https://example.com/profile-image.jpg" /></Field>
+                  <Field label="Profile image *">
+                    <div className="flex items-start gap-4">
+                      <div
+                        className="flex h-28 w-24 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-brand-purple/15"
+                        style={{ background: profile.avatar_color || AVATAR_COLORS[0] }}
+                      >
+                        {profile.thumbnail_url ? (
+                          <img
+                            src={profile.thumbnail_url}
+                            alt="Celebrity preview"
+                            className="h-full w-full object-cover object-top"
+                          />
+                        ) : (
+                          <span className="text-lg font-bold text-white">
+                            {profile.name.split(' ').map((part) => part[0] ?? '').join('').slice(0, 2).toUpperCase() || '?'}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex flex-1 flex-col gap-2">
+                        <input
+                          ref={imageInputRef}
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={handleThumbnailFileChange}
+                          disabled={readOnly}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => imageInputRef.current?.click()}
+                          disabled={readOnly}
+                          className="inline-flex items-center justify-center gap-2 rounded-xl border border-brand-purple/25 px-3 py-2.5 text-sm font-medium text-content-secondary transition-all hover:border-brand-purple/50 hover:bg-surface-subtle hover:text-brand-purple disabled:cursor-default disabled:opacity-60"
+                        >
+                          <ImagePlus className="h-4 w-4" />
+                          {profile.thumbnail_url ? 'Change Image' : 'Upload Image'}
+                        </button>
+                        {profile.thumbnail_url && !readOnly && (
+                          <button
+                            type="button"
+                            onClick={() => setField('thumbnail_url', '')}
+                            className="inline-flex items-center justify-center gap-2 rounded-xl border border-red-200 px-3 py-2.5 text-sm font-medium text-red-500 transition-all hover:bg-red-50"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                            Remove Image
+                          </button>
+                        )}
+                        <p className="text-[11px] leading-relaxed text-content-muted">
+                          PNG, JPG or WEBP. Shown as portrait in the celebrity list and request flows.
+                        </p>
+                      </div>
+                    </div>
+                  </Field>
+                  <Field label="Or paste image URL">
+                    <input
+                      type="url"
+                      value={isDataUrl(profile.thumbnail_url || '') ? '' : (profile.thumbnail_url || '')}
+                      onChange={(e) => setField('thumbnail_url', e.target.value)}
+                      className={inputCls}
+                      disabled={readOnly}
+                      placeholder="https://example.com/profile-image.jpg"
+                    />
+                  </Field>
                   <Field label="Avatar color fallback">
                     <div className="flex flex-wrap gap-2">
                       {AVATAR_COLORS.map((color) => (
@@ -879,11 +1018,35 @@ export default function CelebrityProfileStepper({
                 <ToggleField
                   label="I manage requests myself"
                   checked={profile.manager_settings.selfManaged}
-                  onChange={(checked) => setField('manager_settings', { ...profile.manager_settings, selfManaged: checked, permissions: checked ? [] : profile.manager_settings.permissions })}
+                  onChange={(checked) => setField('manager_settings', {
+                    ...profile.manager_settings,
+                    selfManaged: checked,
+                    permissions: checked ? [] : profile.manager_settings.permissions,
+                    selectedManagerId: checked ? '' : profile.manager_settings.selectedManagerId,
+                  })}
                   disabled={readOnly}
                 />
                 {!profile.manager_settings.selfManaged && (
                   <div className="mt-4 grid gap-4">
+                    {availableManagers.length > 0 && (
+                      <Field label="Existing manager (optional)">
+                        <select
+                          value={profile.manager_settings.selectedManagerId || ''}
+                          onChange={(e) => {
+                            if (e.target.value) applyExistingManager(e.target.value)
+                          }}
+                          className={inputCls}
+                          disabled={readOnly}
+                        >
+                          <option value="">Select an existing manager to prefill details</option>
+                          {availableManagers.map((manager) => (
+                            <option key={manager.id} value={manager.id}>
+                              {manager.name} • {manager.email}
+                            </option>
+                          ))}
+                        </select>
+                      </Field>
+                    )}
                     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                       <Field label="Agency name"><input value={profile.manager_settings.agencyName} onChange={(e) => setField('manager_settings', { ...profile.manager_settings, agencyName: e.target.value })} className={inputCls} disabled={readOnly} placeholder="Twinity Talent Management" /></Field>
                       <Field label="Manager / agent name *"><input value={profile.manager_settings.managerName} onChange={(e) => setField('manager_settings', { ...profile.manager_settings, managerName: e.target.value })} className={inputCls} disabled={readOnly} placeholder="Sara Ahmed" /></Field>
@@ -908,11 +1071,69 @@ export default function CelebrityProfileStepper({
             {step.key === 'media' && (
               <>
                 <Field label="Approved media URLs *">
-                  <textarea
-                    value={getDraftValue('approved_media_urls', profile.approved_media_urls.join('\n'))}
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <input
+                        ref={approvedMediaInputRef}
+                        type="file"
+                        accept="image/*,video/*,audio/*"
+                        multiple
+                        className="hidden"
+                        onChange={handleApprovedMediaFileChange}
+                        disabled={readOnly}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => approvedMediaInputRef.current?.click()}
+                        disabled={readOnly}
+                        className="inline-flex items-center justify-center gap-2 rounded-xl border border-brand-purple/25 px-3 py-2.5 text-sm font-medium text-content-secondary transition-all hover:border-brand-purple/50 hover:bg-surface-subtle hover:text-brand-purple disabled:cursor-default disabled:opacity-60"
+                      >
+                        <Upload className="h-4 w-4" />
+                        Upload Media
+                      </button>
+                      <p className="text-[11px] leading-relaxed text-content-muted">
+                        Upload approved image, video, or audio assets, or paste hosted URLs below.
+                      </p>
+                    </div>
+
+                    {profile.approved_media_urls.length > 0 && (
+                      <div className="space-y-2">
+                        {profile.approved_media_urls.map((mediaUrl, index) => {
+                          const isUploaded = isDataUrl(mediaUrl)
+                          return (
+                            <div key={`${mediaUrl.slice(0, 32)}-${index}`} className="flex items-center justify-between gap-3 rounded-xl border border-brand-purple/12 bg-white px-3 py-2.5">
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-sm font-medium text-content-primary">
+                                  {isUploaded ? `Uploaded media ${index + 1}` : mediaUrl}
+                                </p>
+                                <p className="mt-0.5 text-xs text-content-muted">
+                                  {isUploaded ? 'Will be uploaded when this section is saved.' : 'Hosted media URL'}
+                                </p>
+                              </div>
+                              {!readOnly && (
+                                <button
+                                  type="button"
+                                  onClick={() => setField('approved_media_urls', profile.approved_media_urls.filter((_, itemIndex) => itemIndex !== index))}
+                                  className="inline-flex items-center justify-center rounded-lg border border-red-200 p-2 text-red-500 transition-all hover:bg-red-50"
+                                  aria-label={`Remove media ${index + 1}`}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+
+                    <textarea
+                      value={getDraftValue('approved_media_urls', profile.approved_media_urls.filter((item) => !isDataUrl(item)).join('\n'))}
                     onChange={(e) =>
                       setDraftField('approved_media_urls', e.target.value, () =>
-                        setField('approved_media_urls', parseFlexibleUrls(e.target.value)),
+                        setField('approved_media_urls', [
+                          ...profile.approved_media_urls.filter((item) => isDataUrl(item)),
+                          ...parseFlexibleUrls(e.target.value),
+                        ]),
                       )
                     }
                     className={textareaCls}
@@ -920,6 +1141,7 @@ export default function CelebrityProfileStepper({
                     disabled={readOnly}
                     placeholder={'https://example.com/media-1.mp4\nhttps://example.com/media-2.mp4\nor separate with commas'}
                   />
+                  </div>
                 </Field>
                 <div className="mt-4 grid gap-4 sm:grid-cols-2">
                   <Field label="Signed name *"><input value={profile.contract_acceptance.signedName} onChange={(e) => setField('contract_acceptance', { ...profile.contract_acceptance, signedName: e.target.value })} className={inputCls} disabled={readOnly} /></Field>

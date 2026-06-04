@@ -945,7 +945,11 @@ export default function CelebritiesPage() {
           return (
             <div
               key={celeb.id}
-              className={`bg-white rounded-2xl border p-5 shadow-card transition-all ${celeb.is_active ? 'border-brand-purple/12' : 'border-brand-purple/8 opacity-60'}`}
+              className={`rounded-2xl border p-5 shadow-card transition-all ${
+                celeb.is_active
+                  ? 'bg-white border-brand-purple/12'
+                  : 'bg-[#FCFAFF] border-brand-purple/18'
+              }`}
             >
               <div className="flex items-start justify-between mb-4">
                 <div
@@ -966,7 +970,7 @@ export default function CelebritiesPage() {
                       <Star className={`w-3.5 h-3.5 ${celeb.is_featured ? 'text-amber-400 fill-amber-400' : 'text-content-muted'}`} />
                     </button>
                   )}
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${celeb.is_active ? 'bg-emerald-50 text-emerald-700' : 'bg-surface-subtle text-content-muted'}`}>
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${celeb.is_active ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
                     {celeb.is_active ? 'Active' : 'Inactive'}
                   </span>
                 </div>
@@ -1043,18 +1047,18 @@ export default function CelebritiesPage() {
                   </button>
 
                   <button
-                    onClick={() => createPortalAccess(celeb)}
-                    disabled={portalAccessBusy || !celeb.contact_email}
+                    onClick={() => !celeb.portal_admin?.email && createPortalAccess(celeb)}
+                    disabled={portalAccessBusy || !celeb.contact_email || Boolean(celeb.portal_admin?.email)}
                     className={`w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-medium border transition-all disabled:opacity-60 disabled:cursor-not-allowed ${
                       celeb.portal_admin?.email
-                        ? 'border-brand-purple/20 text-content-secondary hover:border-brand-purple/40 hover:text-brand-purple'
+                        ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
                         : 'border-emerald-200 text-emerald-700 hover:bg-emerald-50'
                     }`}
                   >
                     {portalAccessBusy
                       ? <><Loader2 className="w-3 h-3 animate-spin" /> Sending...</>
                       : celeb.portal_admin?.email
-                        ? 'Resend Credentials'
+                        ? 'Credentials Sent'
                         : 'Create Portal Access'}
                   </button>
 

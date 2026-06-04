@@ -1,17 +1,14 @@
 'use client'
 
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import Link from 'next/link'
+import { useEffect, useState, type ReactNode } from 'react'
 import { AlertTriangle, Clock3, RefreshCw, Save, ShieldCheck, Users2 } from 'lucide-react'
 import {
   adminApi,
   type ManagerDashboardCelebrityTemplates,
   type ManagerDashboardOverview,
-  type ManagerDashboardRequest,
   type ManagerDashboardTemplate,
 } from '@/lib/api'
 import { usePermissions } from '@/lib/permissions-context'
-import RejectReasonModal from '@/components/RejectReasonModal'
 
 type AuditLog = {
   id: string
@@ -24,28 +21,20 @@ type AuditLog = {
   reason?: string | null
 }
 
-type RequestFilter = 'all' | 'pending' | 'review' | 'breached'
-
 export default function ManagerDashboardPage() {
-  const permissions = usePermissions()
   const [overview, setOverview] = useState<ManagerDashboardOverview | null>(null)
-  const [requests, setRequests] = useState<ManagerDashboardRequest[]>([])
   const [templatesByCelebrity, setTemplatesByCelebrity] = useState<ManagerDashboardCelebrityTemplates[]>([])
   const [allTemplates, setAllTemplates] = useState<ManagerDashboardTemplate[]>([])
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
-  const [filter, setFilter] = useState<RequestFilter>('all')
   const [savingCelebrityId, setSavingCelebrityId] = useState<string | null>(null)
-  const [actingRequestId, setActingRequestId] = useState<string | null>(null)
   const [error, setError] = useState('')
-  const [rejectRequestId, setRejectRequestId] = useState<string | null>(null)
 
   async function load() {
     setError('')
-    const [overviewRes, requestsRes, templatesRes, auditRes] = await Promise.all([
+    const [overviewRes, templatesRes, auditRes] = await Promise.all([
       adminApi.managerDashboardOverview(),
-      adminApi.managerDashboardRequests('limit=8'),
       adminApi.managerDashboardTemplates(),
       adminApi.managerDashboardAuditLogs('limit=8'),
     ])
@@ -55,7 +44,6 @@ export default function ManagerDashboardPage() {
       portfolio: overviewRes.portfolio,
       alerts: overviewRes.alerts,
     })
-    setRequests(requestsRes.data || [])
     setTemplatesByCelebrity(templatesRes.data || [])
     setAllTemplates(templatesRes.templates || [])
     setAuditLogs((auditRes.logs || []) as AuditLog[])
@@ -91,41 +79,6 @@ export default function ManagerDashboardPage() {
     }
   }
 
-  async function approveRequest(jobId: string) {
-    setActingRequestId(jobId)
-    setError('')
-    try {
-      await adminApi.managerApproveJob(jobId)
-      await load()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to approve request')
-    } finally {
-      setActingRequestId(null)
-    }
-  }
-
-  async function rejectRequest(jobId: string, note: string) {
-    setActingRequestId(jobId)
-    setError('')
-    try {
-      await adminApi.managerRejectJob(jobId, note)
-      await load()
-      setRejectRequestId(null)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to reject request')
-    } finally {
-      setActingRequestId(null)
-    }
-  }
-
-  const filteredRequests = useMemo(() => {
-    if (filter === 'all') return requests
-    if (filter === 'pending') return requests.filter((request) => request.status === 'pending' || request.status === 'in_progress')
-    if (filter === 'review') return requests.filter((request) => request.status === 'review')
-    if (filter === 'breached') return requests.filter((request) => request.slaState === 'breached')
-    return requests
-  }, [filter, requests])
-
   return (
     <div className="p-4 sm:p-8">
       <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
@@ -133,7 +86,7 @@ export default function ManagerDashboardPage() {
           <p className="text-xs font-bold uppercase tracking-[0.18em] text-brand-purple">TWIN-59 MVP</p>
           <h1 className="mt-2 text-2xl font-bold text-content-primary">Manager Dashboard</h1>
           <p className="mt-1 text-sm text-content-muted">
-            Multi-celebrity portfolio, incoming request queue, SLA monitoring, template controls, and manager audit visibility.
+            Multi-celebrity portfolio, SLA monitoring, template controls, and manager audit visibility.
           </p>
         </div>
         <button
@@ -216,112 +169,7 @@ export default function ManagerDashboardPage() {
             </Card>
           </section>
 
-          <section className="grid gap-6 xl:grid-cols-[1.7fr_1fr]">
-            <Card title="Incoming Request Queue" description="Recent requests across all linked celebrities.">
-              <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                <div className="flex flex-wrap gap-2">
-                  {([
-                    ['all', 'All'],
-                    ['pending', 'Pending'],
-                    ['review', 'Review'],
-                    ['breached', 'Breached'],
-                  ] as const).map(([value, label]) => (
-                    <button
-                      key={value}
-                      type="button"
-                      onClick={() => setFilter(value)}
-                      className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-all ${filter === value ? 'bg-brand-purple text-white' : 'border border-brand-purple/20 bg-white text-content-secondary'}`}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-                <Link href="/manager/requests" className="text-sm font-semibold text-brand-purple hover:underline">
-                  View full queue
-                </Link>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[900px]">
-                  <thead>
-                    <tr className="border-b border-brand-purple/8 text-left text-xs font-bold uppercase tracking-[0.14em] text-content-muted">
-                      <th className="px-3 py-3">Request</th>
-                      <th className="px-3 py-3">Celebrity</th>
-                      <th className="px-3 py-3">Customer</th>
-                      <th className="px-3 py-3">Status</th>
-                      <th className="px-3 py-3">SLA</th>
-                      <th className="px-3 py-3">Value</th>
-                      <th className="px-3 py-3">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredRequests.length === 0 ? (
-                      <tr>
-                        <td colSpan={7} className="px-3 py-6 text-center text-sm text-content-muted">No requests match this filter.</td>
-                      </tr>
-                    ) : (
-                      filteredRequests.map((request) => (
-                        <tr key={request.id} className="border-b border-brand-purple/6 align-top last:border-b-0">
-                          <td className="px-3 py-3">
-                            <p className="text-sm font-semibold text-content-primary">{request.reference_id}</p>
-                            <p className="mt-1 text-xs text-content-muted">{request.product_type.replace(/[-_]/g, ' ')} | {request.purpose}</p>
-                          </td>
-                          <td className="px-3 py-3 text-sm text-content-secondary">{request.celebrity?.name || '-'}</td>
-                          <td className="px-3 py-3">
-                            <p className="text-sm text-content-primary">{request.user?.name || 'Unknown'}</p>
-                            <p className="mt-1 text-xs text-content-muted">{request.user?.company || request.user?.email || '-'}</p>
-                          </td>
-                          <td className="px-3 py-3">
-                            <span className="inline-flex rounded-full bg-surface-subtle px-3 py-1 text-xs font-semibold capitalize text-content-secondary">
-                              {request.status.replace(/[-_]/g, ' ')}
-                            </span>
-                          </td>
-                          <td className="px-3 py-3">
-                            <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${slaTone(request.slaState)}`}>
-                              {request.slaState.replace('_', ' ')}
-                            </span>
-                          </td>
-                          <td className="px-3 py-3 text-sm font-semibold text-content-primary">
-                            {request.currency} {request.estimated_price.toLocaleString()}
-                          </td>
-                          <td className="px-3 py-3">
-                            {request.status === 'review' ? (
-                              <div className="flex flex-wrap gap-2">
-                                {permissions.includes('approve_requests') && (
-                                  <button
-                                    type="button"
-                                    onClick={() => approveRequest(request.id)}
-                                    disabled={actingRequestId === request.id}
-                                    className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
-                                  >
-                                    {actingRequestId === request.id ? 'Saving...' : 'Approve'}
-                                  </button>
-                                )}
-                                {permissions.includes('reject_requests') && (
-                                  <button
-                                    type="button"
-                              onClick={() => setRejectRequestId(request.id)}
-                              disabled={actingRequestId === request.id}
-                              className="rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 disabled:opacity-60"
-                            >
-                                    Reject
-                                  </button>
-                                )}
-                                {!permissions.includes('approve_requests') && !permissions.includes('reject_requests') && (
-                                  <span className="text-xs text-content-muted">No action access</span>
-                                )}
-                              </div>
-                            ) : (
-                              <span className="text-xs text-content-muted">No action</span>
-                            )}
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </Card>
-
+          {/* <section>
             <Card title="Manager Audit Log" description="Recent actions across your linked celebrities and manager activity.">
               <div className="space-y-3">
                 {auditLogs.length === 0 ? (
@@ -339,9 +187,9 @@ export default function ManagerDashboardPage() {
                 )}
               </div>
             </Card>
-          </section>
+          </section> */}
 
-          <Card title="Template Pre-Approval Management" description="Adjust commercial template fast-track selections for each linked celebrity.">
+          {/* <Card title="Template Pre-Approval Management" description="Adjust commercial template fast-track selections for each linked celebrity.">
             <div className="grid gap-5 xl:grid-cols-2">
               {templatesByCelebrity.map((celebrity) => (
                 <TemplateManagerCard
@@ -353,16 +201,10 @@ export default function ManagerDashboardPage() {
                 />
               ))}
             </div>
-          </Card>
+          </Card> */}
         </div>
       )}
 
-      <RejectReasonModal
-        open={Boolean(rejectRequestId)}
-        loading={Boolean(rejectRequestId && actingRequestId === rejectRequestId)}
-        onClose={() => setRejectRequestId(null)}
-        onSubmit={(reason) => rejectRequest(rejectRequestId!, reason)}
-      />
     </div>
   )
 }
@@ -480,7 +322,7 @@ function TemplateManagerCard({
   )
 }
 
-function slaTone(state: ManagerDashboardRequest['slaState']) {
+function slaTone(state: 'on_track' | 'due_soon' | 'breached' | 'completed') {
   if (state === 'breached') return 'bg-red-100 text-red-700'
   if (state === 'due_soon') return 'bg-amber-100 text-amber-700'
   if (state === 'completed') return 'bg-emerald-100 text-emerald-700'

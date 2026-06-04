@@ -225,6 +225,73 @@ export type AdminRefundRequest = {
   }
 }
 
+export type AdminReportingDashboard = {
+  range: {
+    from: string | null
+    to: string | null
+  }
+  executive: {
+    totalUsers: number
+    activeCelebrities: number
+    totalRequests: number
+    deliveredRequests: number
+    failedRequests: number
+    reviewRequests: number
+    pendingRequests: number
+    totalLeadRevenue: number
+    requestRevenue: number
+  }
+  serviceTypes: Array<{
+    productType: string
+    total: number
+    delivered: number
+    review: number
+    failed: number
+    revenue: number
+  }>
+  approval: {
+    totalReview: number
+    waitingCreator: number
+    waitingClient: number
+    readyForDelivery: number
+  }
+  revision: {
+    total: number
+    pending: number
+    approved: number
+    rejected: number
+    escalated: number
+    material: number
+    minor: number
+  }
+  payment: {
+    totalRefundRequests: number
+    requested: number
+    approved: number
+    rejected: number
+    processed: number
+    partial: number
+    requestedAmount: number
+    approvedAmount: number
+  }
+  compliance: {
+    fullReviewRouted: number
+    supportEscalations: number
+    businessVerificationRequired: number
+    blockedUsers: number
+    failedRequests: number
+    validationIssues: number
+  }
+}
+
+export type ManagerDirectoryEntry = {
+  id: string
+  name: string
+  email: string
+  phone?: string | null
+  agency_name?: string | null
+}
+
 async function req<T>(path: string, options?: RequestInit): Promise<T> {
   const mode = getPortalMode()
   const token = getAdminToken(mode)
@@ -260,6 +327,7 @@ export const adminApi = {
   forgotPassword: (body: { email: string }, _mode?: PortalMode) => req(`/admin/forgot-password`, { method: 'POST', body: JSON.stringify(body) }),
   resetPassword:   (token: string, body: object, mode: PortalMode = getPortalMode()) => req(`${getAuthPrefix(mode)}/reset-password/${token}`, { method: 'POST', body: JSON.stringify(body) }),
   dashboard:      () => req('/admin/dashboard'),
+  reportingDashboard: (params = '') => req<{ success: boolean; data: AdminReportingDashboard }>(`/admin/reporting${params ? `?${params}` : ''}`),
   users:          (params = '') => req(`/admin/users?${params}`),
   getUser:        (id: string) => req(`/admin/users/${id}`),
   updateUser:     (id: string, body: object) => req(`/admin/users/${id}/status`, { method: 'PATCH', body: JSON.stringify(body) }),
@@ -321,6 +389,7 @@ export const adminApi = {
   approveCelebrityApplication: (id: string) => req(`/admin/celebrity-applications/${id}/approve`, { method: 'POST' }),
   rejectCelebrityApplication: (id: string, note: string) => req(`/admin/celebrity-applications/${id}/reject`, { method: 'POST', body: JSON.stringify({ note }) }),
   getMyCelebrityProfile: () => req<{ success: boolean; data: Record<string, unknown>; templates: CelebrityPortalTemplate[] }>('/admin/celebrity/profile'),
+  getProfileManagers: () => req<{ success: boolean; data: ManagerDirectoryEntry[] }>('/admin/celebrity/profile/managers'),
   saveMyCelebrityProfile: (body: object) => req('/admin/celebrity/profile', { method: 'PUT', body: JSON.stringify(body) }),
   submitMyCelebrityProfile: () => req('/admin/celebrity/profile/submit', { method: 'POST' }),
   getCelebrityProfileByAdmin: (id: string) => req<{ success: boolean; data: Record<string, unknown>; templates: CelebrityPortalTemplate[] }>(`/admin/celebrities/${id}/profile`),
