@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { Download, Search, X, CheckCircle2, XCircle, Eye, Loader2, Video } from 'lucide-react'
+import { Download, Search, X, CheckCircle2, XCircle, Eye, Loader2, Video, Link } from 'lucide-react'
 import { adminApi } from '@/lib/api'
 import Spinner, { PageLoader } from '@/components/ui/Spinner'
 import { usePermissions } from '@/lib/permissions-context'
@@ -15,6 +15,26 @@ const STATUS_COLORS: Record<string, string> = {
   cancelled:    'bg-surface-subtle text-content-muted',
 }
 const STATUSES = ['pending', 'in-progress', 'review', 'delivered', 'failed', 'cancelled']
+const toUiStatus = (status?: string) => status === 'in_progress' ? 'in-progress' : status || 'pending'
+
+function getCreatorApprovalInfo(job: any): { approved: boolean; label: string } {
+  if (toUiStatus(job?.status) === 'delivered') {
+    return { approved: true, label: 'Delivered' }
+  }
+
+  const history = Array.isArray(job?.status_history) ? job.status_history : []
+  const note = history
+    .map((entry: any) => String(entry?.note || ''))
+    .find((value: string) =>
+      value === 'Approved by celebrity for final delivery' || value === 'Approved by manager for final delivery'
+    )
+
+  if (!note) return { approved: false, label: 'Waiting for celebrity approval' }
+  return {
+    approved: true,
+    label: note.includes('manager') ? 'Manager approved' : 'Celebrity approved',
+  }
+}
 
 const fmt = (d: string) =>
   d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
@@ -63,6 +83,10 @@ function ReviewModal({
 
   const assetUrl  = job.watermarked_url || job.preview_url || job.final_video_url || ''
   const isImageAd = job.product_type === 'image_ad' || job.product_type === 'image-ad'
+  const isDelivered = toUiStatus(job.status) === 'delivered'
+  const creatorApproval = getCreatorApprovalInfo(job)
+  const clientApproved = isDelivered || Boolean(job.client_preview_approved_at)
+  const canDeliver = !isDelivered && creatorApproval.approved && clientApproved
 
   return (
     <>
@@ -179,6 +203,27 @@ function ReviewModal({
               </div>
             )}
 
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <div className="rounded-xl border border-brand-purple/10 bg-surface-subtle px-4 py-3">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-content-muted mb-1">Creator Approval</p>
+                <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${creatorApproval.approved ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                  {creatorApproval.label}
+                </span>
+              </div>
+              <div className="rounded-xl border border-brand-purple/10 bg-surface-subtle px-4 py-3">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-content-muted mb-1">Client Preview Approval</p>
+                <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${clientApproved ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                  {isDelivered ? 'Delivered' : clientApproved ? 'Client approved' : 'Waiting for client approval'}
+                </span>
+              </div>
+            </div>
+
+            {!canDeliver && !isDelivered && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                Superadmin can deliver this service only after both approvals are completed: celebrity or assigned manager approval, and client preview approval.
+              </div>
+            )}
+
             {/* Rejection form */}
             {rejecting && (
               <div className="border border-red-200 rounded-xl p-4 flex flex-col gap-3">
@@ -217,7 +262,7 @@ function ReviewModal({
           </div>
 
           {/* Footer */}
-          {!rejecting && (
+          {!rejecting && !isDelivered && (
             <div className="px-6 py-4 border-t border-brand-purple/10 flex gap-3 shrink-0 bg-white">
               <button
                 onClick={() => setRejecting(true)}
@@ -227,17 +272,113 @@ function ReviewModal({
               </button>
               <button
                 onClick={approve}
-                disabled={approving}
+                disabled={approving || !canDeliver}
                 className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-60"
                 style={{ background: 'linear-gradient(135deg,#9a78fe,#422266)' }}
               >
                 {approving
                   ? <Loader2 className="w-4 h-4 animate-spin" />
                   : <CheckCircle2 className="w-4 h-4" />}
-                {approving ? 'Approving...' : 'Approve & Deliver'}
+                {approving ? 'Delivering...' : 'Deliver Service'}
               </button>
             </div>
           )}
+        </div>
+      </div>
+    </>
+  )
+}
+
+function isValidUrl(value: string) {
+  try {
+    const parsed = new URL(value)
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
+// ── Set Preview URL Modal ────────────────────────────────────────────────────
+function SetPreviewModal({
+  job,
+  onClose,
+  onDone,
+}: {
+  job: any
+  onClose: () => void
+  onDone: (id: string) => void
+}) {
+  const [url, setUrl] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  async function submit() {
+    if (!url.trim()) { setError('Please enter a URL'); return }
+    if (!isValidUrl(url.trim())) { setError('Please enter a valid URL'); return }
+    setBusy(true)
+    setError('')
+    try {
+      await adminApi.setPreviewUrl(job.id, url.trim())
+      onDone(job.id)
+    } catch (err: any) {
+      setError(err.message || 'Failed')
+      setBusy(false)
+    }
+  }
+
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/50 z-40" onClick={onClose} />
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 flex flex-col gap-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-base font-bold text-content-primary">Set Preview URL</h2>
+              <p className="text-xs text-content-muted font-mono mt-0.5">{job.reference_id}</p>
+            </div>
+            <button onClick={onClose} className="w-8 h-8 rounded-full flex items-center justify-center text-content-muted hover:bg-surface-subtle">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          <p className="text-xs text-content-muted leading-relaxed">
+            Paste any accessible video or image URL. The job status will move to <strong>review</strong> and the customer will see the Preview Review Panel.
+          </p>
+
+          <input
+            value={url}
+            onChange={e => setUrl(e.target.value)}
+            placeholder="https://example.com/watermarked-preview.mp4"
+            className="w-full px-3 py-2.5 rounded-xl border border-brand-purple/20 text-sm outline-none focus:border-brand-purple transition-colors text-content-primary placeholder:text-content-muted"
+          />
+
+          <p className="text-xs text-content-muted">
+            Quick test URL (public sample video):{' '}
+            <button
+              type="button"
+              onClick={() => setUrl('https://www.w3schools.com/html/mov_bbb.mp4')}
+              className="text-brand-purple hover:underline font-medium"
+            >
+              Use sample video
+            </button>
+          </p>
+
+          {error && <p className="text-xs text-red-600">{error}</p>}
+
+          <div className="flex gap-3 pt-1">
+            <button onClick={onClose} className="flex-1 py-2.5 rounded-xl text-sm font-medium border border-brand-purple/20 text-content-secondary hover:bg-surface-subtle transition-all">
+              Cancel
+            </button>
+            <button
+              onClick={submit}
+              disabled={busy || !url.trim()}
+              className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50 transition-all"
+              style={{ background: 'linear-gradient(135deg,#9a78fe,#422266)' }}
+            >
+              {busy && <Loader2 className="w-4 h-4 animate-spin" />}
+              Set & Move to Review
+            </button>
+          </div>
         </div>
       </div>
     </>
@@ -255,6 +396,8 @@ export default function VideosPage() {
   const [updatingStatus, setUpdatingStatus] = useState<Set<string>>(new Set())
   const [enablingDownload, setEnablingDownload] = useState<Set<string>>(new Set())
   const [reviewJob, setReviewJob] = useState<any | null>(null)
+  const [setPreviewJob, setSetPreviewJob] = useState<any | null>(null)
+  const [statusError, setStatusError] = useState('')
   const permissions = usePermissions()
   const canManage = permissions.includes('videos.manage')
 
@@ -264,7 +407,7 @@ export default function VideosPage() {
     if (statusFilter !== 'all') params.set('status', statusFilter)
     adminApi.jobs(params.toString())
       .then((res: any) => {
-        setJobs(res.data || [])
+        setJobs((res.data || []).map((job: any) => ({ ...job, status: toUiStatus(job.status) })))
         setTotal(res.total || 0)
       })
       .catch(() => null)
@@ -282,11 +425,17 @@ export default function VideosPage() {
 
   async function updateStatus(id: string, status: string) {
     if (updatingStatus.has(id)) return
+    setStatusError('')
     setUpdatingStatus(prev => new Set(prev).add(id))
     try {
-      await adminApi.updateJobStatus(id, { status })
-      setJobs(prev => prev.map(j => j.id === id ? { ...j, status } : j))
-    } catch {}
+      const res: any = await adminApi.updateJobStatus(id, { status })
+      const updatedJob = res?.data
+      setJobs(prev => prev.map(j => j.id === id
+        ? { ...j, ...(updatedJob || {}), status: toUiStatus(updatedJob?.status || status) }
+        : j))
+    } catch (err: any) {
+      setStatusError(err.message || 'Status update failed')
+    }
     setUpdatingStatus(prev => { const s = new Set(prev); s.delete(id); return s })
   }
 
@@ -303,14 +452,22 @@ export default function VideosPage() {
   function onApproved(id: string) {
     setJobs(prev => prev.map(j => j.id === id ? { ...j, status: 'delivered', download_enabled: true } : j))
     setReviewJob(null)
+    fetchJobs()
   }
 
   function onRejected(id: string) {
     setJobs(prev => prev.map(j => j.id === id ? { ...j, status: 'failed' } : j))
     setReviewJob(null)
+    fetchJobs()
   }
 
-  const colCount = canManage ? 8 : 6
+  function onPreviewSet(id: string) {
+    setJobs(prev => prev.map(j => j.id === id ? { ...j, status: 'review' } : j))
+    setSetPreviewJob(null)
+    fetchJobs()
+  }
+
+  const colCount = canManage ? 9 : 6
 
   return (
     <div className="p-8">
@@ -318,6 +475,12 @@ export default function VideosPage() {
         <h1 className="text-2xl font-bold text-content-primary">Video Jobs</h1>
         <p className="text-sm text-content-muted mt-1">{total} total jobs</p>
       </div>
+
+      {statusError && (
+        <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {statusError}
+        </div>
+      )}
 
       <div className="flex flex-wrap gap-3 mb-5">
         <div className="relative">
@@ -347,7 +510,7 @@ export default function VideosPage() {
             <tr className="border-b border-brand-purple/8">
               {[
                 'Ref / Celebrity', 'User', 'Product', 'Status', 'Price', 'Date',
-                ...(canManage ? ['Download', 'Review'] : []),
+                ...(canManage ? ['Set Preview', 'Download', 'Review'] : []),
               ].map(h => (
                 <th key={h} className="px-5 py-3.5 text-left text-xs font-semibold text-content-muted uppercase tracking-wide">{h}</th>
               ))}
@@ -406,6 +569,18 @@ export default function VideosPage() {
                   {canManage && (
                     <>
                       <td className="px-5 py-3.5">
+                        {job.status !== 'review' && job.status !== 'delivered' ? (
+                          <button
+                            onClick={() => setSetPreviewJob(job)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-brand-purple border border-brand-purple/30 hover:bg-brand-purple/8 transition-all"
+                          >
+                            <Link className="w-3 h-3" /> Set Preview
+                          </button>
+                        ) : (
+                          <span className="text-xs text-content-muted">—</span>
+                        )}
+                      </td>
+                      <td className="px-5 py-3.5">
                         {job.download_enabled
                           ? <span className="text-xs text-emerald-600 font-semibold">Enabled</span>
                           : <button
@@ -452,6 +627,14 @@ export default function VideosPage() {
           onClose={() => setReviewJob(null)}
           onApproved={onApproved}
           onRejected={onRejected}
+        />
+      )}
+
+      {setPreviewJob && (
+        <SetPreviewModal
+          job={setPreviewJob}
+          onClose={() => setSetPreviewJob(null)}
+          onDone={onPreviewSet}
         />
       )}
     </div>

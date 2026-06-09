@@ -8,12 +8,19 @@ interface ProductTypeDoc {
   id: string
   slug: string
   name: string
+  name_ar: string
   description: string
+  description_ar: string
   detail: string
+  detail_ar: string
   icon: string
   price_from: number
   duration: string
+  duration_ar: string
   use_cases: string[]
+  use_cases_ar: string[]
+  video_prompt: string
+  gemini_system_prompt: string
   is_active: boolean
   order: number
 }
@@ -21,8 +28,10 @@ interface ProductTypeDoc {
 type FormState = Omit<ProductTypeDoc, 'id'>
 
 const EMPTY: FormState = {
-  slug: '', name: '', description: '', detail: '',
-  icon: '', price_from: 0, duration: '', use_cases: [],
+  slug: '', name: '', name_ar: '', description: '', description_ar: '',
+  detail: '', detail_ar: '', icon: '', price_from: 0,
+  duration: '', duration_ar: '', use_cases: [], use_cases_ar: [],
+  video_prompt: '', gemini_system_prompt: '',
   is_active: true, order: 0,
 }
 
@@ -42,7 +51,8 @@ export default function ProductTypesPage() {
   const [modalOpen,      setModalOpen]      = useState(false)
   const [editing,        setEditing]        = useState<ProductTypeDoc | null>(null)
   const [form,           setForm]           = useState<FormState>(EMPTY)
-  const [useCasesText, setUseCasesText] = useState('')
+  const [useCasesText,   setUseCasesText]   = useState('')
+  const [useCasesArText, setUseCasesArText] = useState('')
   const [formError,      setFormError]      = useState('')
   const [deleteId,       setDeleteId]       = useState<string | null>(null)
 
@@ -64,6 +74,7 @@ export default function ProductTypesPage() {
     setEditing(null)
     setForm(EMPTY)
     setUseCasesText('')
+    setUseCasesArText('')
     setFormError('')
     setModalOpen(true)
   }
@@ -71,15 +82,18 @@ export default function ProductTypesPage() {
   function openEdit(t: ProductTypeDoc) {
     setEditing(t)
     setForm({
-      slug: t.slug, name: t.name,
-      description: t.description,
-      detail: t.detail,
+      slug: t.slug, name: t.name, name_ar: t.name_ar,
+      description: t.description, description_ar: t.description_ar,
+      detail: t.detail, detail_ar: t.detail_ar,
       icon: t.icon, price_from: t.price_from,
-      duration: t.duration,
-      use_cases: t.use_cases,
+      duration: t.duration, duration_ar: t.duration_ar,
+      use_cases: t.use_cases, use_cases_ar: t.use_cases_ar,
+      video_prompt: t.video_prompt,
+      gemini_system_prompt: t.gemini_system_prompt,
       is_active: t.is_active, order: t.order,
     })
     setUseCasesText(t.use_cases.join(', '))
+    setUseCasesArText(t.use_cases_ar.join(', '))
     setFormError('')
     setModalOpen(true)
   }
@@ -87,12 +101,14 @@ export default function ProductTypesPage() {
   async function handleSave() {
     if (!form.slug.trim()) { setFormError('Slug is required'); return }
     if (!form.name.trim()) { setFormError('Name is required'); return }
+    if (!form.name_ar.trim()) { setFormError('Arabic name is required'); return }
     setSaving(true)
     setFormError('')
     try {
       const body = {
         ...form,
-        use_cases: useCasesFromText(useCasesText),
+        use_cases:    useCasesFromText(useCasesText),
+        use_cases_ar: useCasesFromText(useCasesArText),
       }
       if (editing) {
         const res = await adminApi.updateProductType(editing.id, body) as { success: boolean; data: ProductTypeDoc }
@@ -136,7 +152,7 @@ export default function ProductTypesPage() {
         <div>
           <h1 className="text-2xl font-bold text-content-primary">Product Types</h1>
           <p className="text-sm text-content-muted mt-1">
-            Manage video product types shown to customers.
+            Manage video product types and their AI generation prompts.
           </p>
         </div>
         {canManage && (
@@ -184,6 +200,7 @@ export default function ProductTypesPage() {
                     {t.icon && <span className="text-2xl leading-none">{t.icon}</span>}
                     <div>
                       <p className="font-bold text-content-primary text-sm">{t.name}</p>
+                      <p className="text-xs text-content-muted">{t.name_ar}</p>
                     </div>
                   </div>
                   <span className={`shrink-0 text-xs px-2 py-1 rounded-full font-medium ${t.is_active ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' : 'bg-gray-100 text-gray-500 border border-gray-200'}`}>
@@ -197,6 +214,16 @@ export default function ProductTypesPage() {
                 </p>
                 <p className="text-xs text-content-secondary line-clamp-2">{t.description}</p>
 
+                <div className="mt-3 flex flex-col gap-1.5">
+                  <div className="flex items-center gap-1.5">
+                    <div className={`w-2 h-2 rounded-full shrink-0 ${t.video_prompt ? 'bg-emerald-400' : 'bg-gray-200'}`} />
+                    <span className="text-xs text-content-muted">Video prompt {t.video_prompt ? 'set' : 'not set'}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <div className={`w-2 h-2 rounded-full shrink-0 ${t.gemini_system_prompt ? 'bg-emerald-400' : 'bg-gray-200'}`} />
+                    <span className="text-xs text-content-muted">Gemini prompt {t.gemini_system_prompt ? 'set' : 'not set'}</span>
+                  </div>
+                </div>
               </div>
 
               {canManage && (
@@ -269,22 +296,40 @@ export default function ProductTypesPage() {
                 </div>
               </div>
 
-              {/* Name */}
-              <div className="flex flex-col gap-1.5">
-                <label className={labelCls}>Name <span className="text-red-500">*</span></label>
-                <input value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} placeholder="Short Product Ads" className={inputCls} />
+              {/* Names */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex flex-col gap-1.5">
+                  <label className={labelCls}>Name (EN) <span className="text-red-500">*</span></label>
+                  <input value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} placeholder="Short Product Ads" className={inputCls} />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <label className={labelCls}>Name (AR) <span className="text-red-500">*</span></label>
+                  <input value={form.name_ar} onChange={e => setForm(p => ({ ...p, name_ar: e.target.value }))} placeholder="إعلانات قصيرة" className={inputCls} dir="rtl" />
+                </div>
               </div>
 
-              {/* Short description */}
-              <div className="flex flex-col gap-1.5">
-                <label className={labelCls}>Short Description</label>
-                <input value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))} placeholder="Short celebrity Ad" className={inputCls} />
+              {/* Short descriptions */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex flex-col gap-1.5">
+                  <label className={labelCls}>Short Description (EN)</label>
+                  <input value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))} placeholder="Short celebrity Ad" className={inputCls} />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <label className={labelCls}>Short Description (AR)</label>
+                  <input value={form.description_ar} onChange={e => setForm(p => ({ ...p, description_ar: e.target.value }))} placeholder="إعلان مشهور قصير" className={inputCls} dir="rtl" />
+                </div>
               </div>
 
               {/* Long detail */}
-              <div className="flex flex-col gap-1.5">
-                <label className={labelCls}>Detail</label>
-                <textarea rows={2} value={form.detail} onChange={e => setForm(p => ({ ...p, detail: e.target.value }))} placeholder="Full description..." className={textareaCls} />
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex flex-col gap-1.5">
+                  <label className={labelCls}>Detail (EN)</label>
+                  <textarea rows={2} value={form.detail} onChange={e => setForm(p => ({ ...p, detail: e.target.value }))} placeholder="Full description..." className={textareaCls} />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <label className={labelCls}>Detail (AR)</label>
+                  <textarea rows={2} value={form.detail_ar} onChange={e => setForm(p => ({ ...p, detail_ar: e.target.value }))} placeholder="وصف كامل..." className={textareaCls} dir="rtl" />
+                </div>
               </div>
 
               {/* Pricing, order, active */}
@@ -312,15 +357,59 @@ export default function ProductTypesPage() {
               </div>
 
               {/* Delivery */}
-              <div className="flex flex-col gap-1.5">
-                <label className={labelCls}>Delivery Time</label>
-                <input value={form.duration} onChange={e => setForm(p => ({ ...p, duration: e.target.value }))} placeholder="Delivery in 3–5 business days" className={inputCls} />
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex flex-col gap-1.5">
+                  <label className={labelCls}>Delivery Time (EN)</label>
+                  <input value={form.duration} onChange={e => setForm(p => ({ ...p, duration: e.target.value }))} placeholder="Delivery in 3–5 business days" className={inputCls} />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <label className={labelCls}>Delivery Time (AR)</label>
+                  <input value={form.duration_ar} onChange={e => setForm(p => ({ ...p, duration_ar: e.target.value }))} placeholder="التسليم في 3-5 أيام عمل" className={inputCls} dir="rtl" />
+                </div>
               </div>
 
               {/* Use cases */}
-              <div className="flex flex-col gap-1.5">
-                <label className={labelCls}>Use Cases — comma-separated</label>
-                <input value={useCasesText} onChange={e => setUseCasesText(e.target.value)} placeholder="Brand Ads, Product Launches" className={inputCls} />
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex flex-col gap-1.5">
+                  <label className={labelCls}>Use Cases (EN) — comma-separated</label>
+                  <input value={useCasesText} onChange={e => setUseCasesText(e.target.value)} placeholder="Brand Ads, Product Launches" className={inputCls} />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <label className={labelCls}>Use Cases (AR) — comma-separated</label>
+                  <input value={useCasesArText} onChange={e => setUseCasesArText(e.target.value)} placeholder="إعلانات العلامة التجارية، الإطلاق" className={inputCls} dir="rtl" />
+                </div>
+              </div>
+
+              {/* Divider */}
+              <div className="border-t border-brand-purple/10" />
+
+              {/* AI Prompts */}
+              <div className="flex flex-col gap-4">
+                <p className="text-xs font-bold text-content-secondary uppercase tracking-widest">AI Prompts</p>
+
+                <div className="flex flex-col gap-1.5">
+                  <label className={labelCls}>Creatify — Video Generation Prompt</label>
+                  <p className="text-xs text-content-muted -mt-0.5">Guides how Creatify Aurora renders the celebrity in the video. Describe tone, expression, motion style, and anything to avoid.</p>
+                  <textarea
+                    rows={4}
+                    value={form.video_prompt}
+                    onChange={e => setForm(p => ({ ...p, video_prompt: e.target.value }))}
+                    placeholder="Calm, authoritative tone. Natural smiling expression. Subtle hand movements. Avoid: cartoon, blur, distorted eyes, low resolution..."
+                    className={textareaCls}
+                  />
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <label className={labelCls}>Gemini — Image Generation System Prompt</label>
+                  <p className="text-xs text-content-muted -mt-0.5">System instruction injected into Gemini when customers generate background scenes for this product type.</p>
+                  <textarea
+                    rows={4}
+                    value={form.gemini_system_prompt}
+                    onChange={e => setForm(p => ({ ...p, gemini_system_prompt: e.target.value }))}
+                    placeholder="You are a professional scene designer for celebrity ads. Generate clean, modern backgrounds..."
+                    className={textareaCls}
+                  />
+                </div>
               </div>
 
               {formError && (

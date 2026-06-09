@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
 import { Plus, ToggleLeft, ToggleRight, Edit2, Star, X, Loader2, ChevronDown, ImagePlus, Trash2, Mic, CheckCircle2, Upload, Music2, AlertCircle, Wand2 } from 'lucide-react'
 import { adminApi } from '@/lib/api'
 import Spinner, { PageLoader } from '@/components/ui/Spinner'
@@ -9,18 +10,29 @@ import { usePermissions } from '@/lib/permissions-context'
 interface Celeb {
   id: string
   name: string
+  name_ar: string
   slug: string
   industry: string
   nationality: string
+  nationality_ar: string
+  contact_email?: string | null
   initials: string
   avatar_color: string
   thumbnail_url?: string
   bio?: string
+  bio_ar?: string
   languages: string[]
   tags: string[]
+  tags_ar: string[]
   voice_model_id?: string
   is_active: boolean
   is_featured: boolean
+  onboarding_status?: string
+  portal_admin?: {
+    id: string
+    email: string
+    is_active: boolean
+  } | null
   price_range: {
     greeting: { min: number; max: number }
     'video-ad': { min: number; max: number }
@@ -29,10 +41,10 @@ interface Celeb {
 }
 
 type FormState = {
-  name: string; slug: string; industry: string
-  nationality: string; initials: string
-  bio: string; avatarColor: string; thumbnailUrl: string
-  languages: string; tags: string
+  name: string; nameAr: string; slug: string; industry: string
+  nationality: string; nationalityAr: string; initials: string; contactEmail: string
+  bio: string; bioAr: string; avatarColor: string; thumbnailUrl: string
+  languages: string; tags: string; tagsAr: string
   voiceModelId: string
   isFeatured: boolean; isActive: boolean
   processThumbnail: boolean
@@ -58,10 +70,10 @@ const AVATAR_COLORS = [
 ]
 
 const EMPTY_FORM: FormState = {
-  name: '', slug: '', industry: 'entertainment',
-  nationality: '', initials: '',
-  bio: '', avatarColor: AVATAR_COLORS[0], thumbnailUrl: '',
-  languages: '', tags: '',
+  name: '', nameAr: '', slug: '', industry: 'entertainment',
+  nationality: '', nationalityAr: '', initials: '', contactEmail: '',
+  bio: '', bioAr: '', avatarColor: AVATAR_COLORS[0], thumbnailUrl: '',
+  languages: '', tags: '', tagsAr: '',
   voiceModelId: '',
   isFeatured: false, isActive: true,
   processThumbnail: false,
@@ -76,15 +88,20 @@ function generateSlug(name: string) {
 function celebToForm(c: Celeb): FormState {
   return {
     name: c.name,
+    nameAr: c.name_ar,
     slug: c.slug,
     industry: c.industry,
     nationality: c.nationality,
+    nationalityAr: c.nationality_ar,
     initials: c.initials,
+    contactEmail: c.contact_email ?? '',
     bio: c.bio ?? '',
+    bioAr: c.bio_ar ?? '',
     avatarColor: c.avatar_color,
     thumbnailUrl: c.thumbnail_url ?? '',
     languages: c.languages.join(', '),
     tags: c.tags.join(', '),
+    tagsAr: c.tags_ar.join(', '),
     voiceModelId: c.voice_model_id ?? '',
     isFeatured: c.is_featured,
     isActive: c.is_active,
@@ -100,15 +117,20 @@ function formToBody(f: FormState) {
   const splitArr = (s: string) => s.split(',').map(x => x.trim()).filter(Boolean)
   return {
     name: f.name.trim(),
+    nameAr: f.nameAr.trim(),
     slug: f.slug || generateSlug(f.name),
     industry: f.industry,
     nationality: f.nationality.trim(),
+    nationalityAr: f.nationalityAr.trim(),
     initials: f.initials.trim() || f.name.slice(0, 2).toUpperCase(),
+    contactEmail: f.contactEmail.trim() || undefined,
     bio: f.bio.trim() || undefined,
+    bioAr: f.bioAr.trim() || undefined,
     avatarColor: f.avatarColor,
     thumbnailUrl: f.thumbnailUrl.trim() || undefined,
     languages: splitArr(f.languages),
     tags: splitArr(f.tags),
+    tagsAr: splitArr(f.tagsAr),
     voiceModelId: f.voiceModelId.trim() || undefined,
     isFeatured: f.isFeatured,
     isActive: f.isActive,
@@ -118,6 +140,33 @@ function formToBody(f: FormState) {
       'video-ad': { min: Number(f.priceAvatarMin)   || 0, max: Number(f.priceAvatarMax)   || 0 },
     },
   }
+}
+
+function validateCelebForm(form: FormState, isEdit = false): string | null {
+  const email = form.contactEmail.trim()
+  if (!form.name.trim()) return 'Name (EN) is required.'
+  if (!form.nameAr.trim()) return 'Name (AR) is required.'
+  if (!form.industry.trim()) return 'Industry is required.'
+  if (!form.nationality.trim()) return 'Nationality (EN) is required.'
+  if (!form.nationalityAr.trim()) return 'Nationality (AR) is required.'
+  if (!isEdit && !email) return 'Contact email is required.'
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return 'Enter a valid contact email.'
+  if (!form.bio.trim()) return 'Bio (English) is required.'
+  if (!form.languages.split(',').map(x => x.trim()).filter(Boolean).length) return 'At least one language is required.'
+  if (!form.thumbnailUrl.trim() && !form.avatarColor.trim()) return 'Add a profile image or keep an avatar color selected.'
+
+  const priceRows = [
+    { label: 'Personal Greetings', min: Number(form.priceGreetingMin), max: Number(form.priceGreetingMax) },
+    { label: 'Video Ad', min: Number(form.priceAvatarMin), max: Number(form.priceAvatarMax) },
+  ]
+
+  for (const row of priceRows) {
+    if (!Number.isFinite(row.min) || row.min < 0) return `${row.label} minimum price is required.`
+    if (!Number.isFinite(row.max) || row.max < 0) return `${row.label} maximum price is required.`
+    if (row.max < row.min) return `${row.label} max price must be greater than or equal to min price.`
+  }
+
+  return null
 }
 
 // ── Field helpers ───────────────────────────────────────────────────────────
@@ -173,8 +222,9 @@ function CelebDrawer({
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
-    if (!form.name.trim() || !form.nationality.trim()) {
-      setError('Name and Nationality are required.')
+    const validationError = validateCelebForm(form, isEdit)
+    if (validationError) {
+      setError(validationError)
       return
     }
     setSaving(true)
@@ -237,8 +287,11 @@ function CelebDrawer({
           <section>
             <p className="text-[11px] font-bold uppercase tracking-wider text-content-muted mb-3">Basic Info</p>
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Name *">
+              <Field label="Name (English) *">
                 <input value={form.name} onChange={e => set('name', e.target.value)} className={inputCls} placeholder="e.g. Ahmed Al Rashidi" />
+              </Field>
+              <Field label="Name (Arabic) *">
+                <input dir="rtl" value={form.nameAr} onChange={e => set('nameAr', e.target.value)} className={inputCls} placeholder="أحمد الراشدي" />
               </Field>
               <Field label="Slug">
                 <input value={form.slug} onChange={e => set('slug', e.target.value)} className={inputCls} placeholder="ahmed-al-rashidi" />
@@ -256,8 +309,20 @@ function CelebDrawer({
                   <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-content-muted pointer-events-none" />
                 </div>
               </Field>
-              <Field label="Nationality *">
+              <Field label="Nationality (EN) *">
                 <input value={form.nationality} onChange={e => set('nationality', e.target.value)} className={inputCls} placeholder="Saudi Arabian" />
+              </Field>
+              <Field label="Nationality (AR)">
+                <input dir="rtl" value={form.nationalityAr} onChange={e => set('nationalityAr', e.target.value)} className={inputCls} placeholder="سعودي" />
+              </Field>
+              <Field label="Contact Email *">
+                <input
+                  type="email"
+                  value={form.contactEmail}
+                  onChange={e => set('contactEmail', e.target.value)}
+                  className={inputCls}
+                  placeholder="celebrity@twinity.ai"
+                />
               </Field>
             </div>
           </section>
@@ -265,9 +330,14 @@ function CelebDrawer({
           {/* Bio */}
           <section>
             <p className="text-[11px] font-bold uppercase tracking-wider text-content-muted mb-3">Bio</p>
-            <Field label="Bio">
-              <textarea value={form.bio} onChange={e => set('bio', e.target.value)} className={textareaCls} rows={3} placeholder="Short celebrity bio..." />
-            </Field>
+            <div className="flex flex-col gap-3">
+              <Field label="Bio (English)">
+                <textarea value={form.bio} onChange={e => set('bio', e.target.value)} className={textareaCls} rows={3} placeholder="Short celebrity bio..." />
+              </Field>
+              <Field label="Bio (Arabic)">
+                <textarea dir="rtl" value={form.bioAr} onChange={e => set('bioAr', e.target.value)} className={textareaCls} rows={3} placeholder="نبذة قصيرة..." />
+              </Field>
+            </div>
           </section>
 
           {/* Appearance */}
@@ -403,15 +473,18 @@ function CelebDrawer({
               <Field label="Languages">
                 <input value={form.languages} onChange={e => set('languages', e.target.value)} className={inputCls} placeholder="Arabic, English" />
               </Field>
-              <Field label="Tags">
+              <Field label="Tags (EN)">
                 <input value={form.tags} onChange={e => set('tags', e.target.value)} className={inputCls} placeholder="actor, host, presenter" />
+              </Field>
+              <Field label="Tags (AR)">
+                <input dir="rtl" value={form.tagsAr} onChange={e => set('tagsAr', e.target.value)} className={inputCls} placeholder="ممثل، مذيع" />
               </Field>
             </div>
           </section>
 
           {/* Pricing */}
           <section>
-            <p className="text-[11px] font-bold uppercase tracking-wider text-content-muted mb-3">Pricing (USD)</p>
+            <p className="text-[11px] font-bold uppercase tracking-wider text-content-muted mb-3">Pricing (SAR)</p>
             <div className="flex flex-col gap-3">
               {[
                 { label: 'Personal Greetings', minKey: 'priceGreetingMin', maxKey: 'priceGreetingMax' },
@@ -420,24 +493,34 @@ function CelebDrawer({
                 <div key={row.label} className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
                   <div>
                     <p className="text-xs text-content-muted mb-1">{row.label} — Min</p>
-                    <input
-                      type="number" min="0"
-                      value={form[row.minKey as keyof FormState] as string}
-                      onChange={e => set(row.minKey as keyof FormState, e.target.value)}
-                      className={inputCls}
-                      placeholder="0"
-                    />
+                    <div className="relative">
+                      <input
+                        type="number" min="0"
+                        value={form[row.minKey as keyof FormState] as string}
+                        onChange={e => set(row.minKey as keyof FormState, e.target.value)}
+                        className={`${inputCls} pr-14`}
+                        placeholder="0"
+                      />
+                      <span className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-[11px] font-semibold uppercase tracking-[0.12em] text-content-muted">
+                        SAR
+                      </span>
+                    </div>
                   </div>
                   <span className="text-content-muted text-sm mt-4">—</span>
                   <div>
                     <p className="text-xs text-content-muted mb-1">Max</p>
-                    <input
-                      type="number" min="0"
-                      value={form[row.maxKey as keyof FormState] as string}
-                      onChange={e => set(row.maxKey as keyof FormState, e.target.value)}
-                      className={inputCls}
-                      placeholder="0"
-                    />
+                    <div className="relative">
+                      <input
+                        type="number" min="0"
+                        value={form[row.maxKey as keyof FormState] as string}
+                        onChange={e => set(row.maxKey as keyof FormState, e.target.value)}
+                        className={`${inputCls} pr-14`}
+                        placeholder="0"
+                      />
+                      <span className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-[11px] font-semibold uppercase tracking-[0.12em] text-content-muted">
+                        SAR
+                      </span>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -691,11 +774,15 @@ export default function CelebritiesPage() {
   const [celebs, setCelebs] = useState<Celeb[]>([])
   const [loading, setLoading] = useState(true)
   const [toggling, setToggling] = useState<Set<string>>(new Set())
+  const [portalBusy, setPortalBusy] = useState<Set<string>>(new Set())
+  const [portalMsg, setPortalMsg] = useState<Record<string, string>>({})
   const [voiceMsg, setVoiceMsg] = useState<Record<string, string>>({})
   const [voiceModalCeleb, setVoiceModalCeleb] = useState<Celeb | null>(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [editTarget, setEditTarget] = useState<Celeb | null>(null)
+  const [statusTab, setStatusTab] = useState<'active' | 'inactive'>('active')
   const [search, setSearch] = useState('')
+  const [error, setError] = useState('')
   const permissions = usePermissions()
   const canManage = permissions.includes('celebrities.manage')
 
@@ -710,10 +797,13 @@ export default function CelebritiesPage() {
   async function toggle(id: string) {
     if (toggling.has(id)) return
     setToggling(prev => new Set(prev).add(id))
+    setError('')
     try {
       const res: any = await adminApi.toggleCeleb(id)
       setCelebs(prev => prev.map(c => c.id === id ? { ...c, is_active: res.data.is_active } : c))
-    } catch {}
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update celebrity status')
+    }
     setToggling(prev => { const s = new Set(prev); s.delete(id); return s })
   }
 
@@ -730,13 +820,38 @@ export default function CelebritiesPage() {
     } catch {}
   }
 
-  function openAdd() {
-    setEditTarget(null)
-    setDrawerOpen(true)
+  async function createPortalAccess(celeb: Celeb) {
+    if (portalBusy.has(celeb.id) || !celeb.contact_email) return
+    setPortalBusy(prev => new Set(prev).add(celeb.id))
+    setPortalMsg(prev => ({ ...prev, [celeb.id]: '' }))
+    try {
+      const res: any = await adminApi.createCelebrityPortalAccess(celeb.id)
+      setCelebs(prev => prev.map(c => c.id === celeb.id
+        ? {
+            ...c,
+            is_active: res.data.celebrity.is_active,
+            onboarding_status: res.data.celebrity.onboarding_status,
+            portal_admin: {
+              id: res.data.admin.id,
+              email: res.data.admin.email,
+              is_active: true,
+            },
+          }
+        : c))
+      setPortalMsg(prev => ({ ...prev, [celeb.id]: res.message || 'Portal access created.' }))
+    } catch (err: any) {
+      setPortalMsg(prev => ({ ...prev, [celeb.id]: err.message || 'Failed to create portal access.' }))
+    } finally {
+      setPortalBusy(prev => {
+        const next = new Set(prev)
+        next.delete(celeb.id)
+        return next
+      })
+    }
   }
 
-  function openEdit(celeb: Celeb) {
-    setEditTarget(celeb)
+  function openAdd() {
+    setEditTarget(null)
     setDrawerOpen(true)
   }
 
@@ -749,11 +864,21 @@ export default function CelebritiesPage() {
     setDrawerOpen(false)
   }
 
-  const filtered = search.trim()
+  const searched = search.trim()
     ? celebs.filter(c =>
         c.name.toLowerCase().includes(search.toLowerCase()) ||
+        c.name_ar.includes(search) ||
         c.industry.includes(search.toLowerCase()))
     : celebs
+
+  const filtered = searched.filter((celeb) => (
+    statusTab === 'active'
+      ? celeb.is_active
+      : !celeb.is_active
+  ))
+
+  const activeCount = celebs.filter((celeb) => celeb.is_active).length
+  const inactiveCount = celebs.filter((celeb) => !celeb.is_active).length
 
   return (
     <div className="p-8">
@@ -784,6 +909,36 @@ export default function CelebritiesPage() {
         </div>
       </div>
 
+      <div className="mb-6 flex flex-wrap items-center gap-3">
+        {[
+          { key: 'active' as const, label: 'Active Celebrities', count: activeCount },
+          { key: 'inactive' as const, label: 'Inactive Celebrities', count: inactiveCount },
+        ].map((tab) => {
+          const active = statusTab === tab.key
+          return (
+            <button
+              key={tab.key}
+              onClick={() => setStatusTab(tab.key)}
+              className={[
+                'inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition-all',
+                active
+                  ? 'border-brand-purple bg-brand-purple/8 text-brand-purple'
+                  : 'border-brand-purple/15 bg-white text-content-secondary hover:border-brand-purple/30 hover:bg-surface-subtle',
+              ].join(' ')}
+            >
+              <span>{tab.label}</span>
+              <span className="rounded-full bg-white/80 px-2 py-0.5 text-xs">{tab.count}</span>
+            </button>
+          )
+        })}
+      </div>
+
+      {error && (
+        <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+          {error}
+        </div>
+      )}
+
       {loading && <PageLoader />}
 
       {!loading && filtered.length === 0 && (
@@ -796,10 +951,15 @@ export default function CelebritiesPage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
         {filtered.map(celeb => {
           const busy = toggling.has(celeb.id)
+          const portalAccessBusy = portalBusy.has(celeb.id)
           return (
             <div
               key={celeb.id}
-              className={`bg-white rounded-2xl border p-5 shadow-card transition-all ${celeb.is_active ? 'border-brand-purple/12' : 'border-brand-purple/8 opacity-60'}`}
+              className={`rounded-2xl border p-5 shadow-card transition-all ${
+                celeb.is_active
+                  ? 'bg-white border-brand-purple/12'
+                  : 'bg-[#FCFAFF] border-brand-purple/18'
+              }`}
             >
               <div className="flex items-start justify-between mb-4">
                 <div
@@ -820,33 +980,50 @@ export default function CelebritiesPage() {
                       <Star className={`w-3.5 h-3.5 ${celeb.is_featured ? 'text-amber-400 fill-amber-400' : 'text-content-muted'}`} />
                     </button>
                   )}
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${celeb.is_active ? 'bg-emerald-50 text-emerald-700' : 'bg-surface-subtle text-content-muted'}`}>
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${celeb.is_active ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
                     {celeb.is_active ? 'Active' : 'Inactive'}
                   </span>
                 </div>
               </div>
 
               <h3 className="font-bold text-content-primary text-sm">{celeb.name}</h3>
+              <p className="text-xs text-content-muted mt-0.5">{celeb.name_ar}</p>
               <p className="text-xs text-brand-purple capitalize mt-1">{celeb.industry}</p>
+              {celeb.contact_email && (
+                <p className="mt-2 text-[11px] text-content-muted break-all">{celeb.contact_email}</p>
+              )}
+              {celeb.portal_admin?.email ? (
+                <p className="mt-1 text-[11px] text-emerald-700">Portal login: {celeb.portal_admin.email}</p>
+              ) : (
+                <p className="mt-1 text-[11px] text-amber-700">
+                  {celeb.contact_email ? 'Portal access not created yet.' : 'Add a contact email to enable portal access.'}
+                </p>
+              )}
 
               <div className="mt-3 pt-3 border-t border-brand-purple/8 flex items-center justify-between">
                 <div className="text-xs text-content-muted">
                   <span className="font-bold text-content-primary">{celeb.total_orders}</span> orders
                 </div>
                 <div className="text-xs text-content-muted">
-                  from <span className="font-bold text-brand-purple">${(celeb.price_range?.greeting?.min || 0).toLocaleString()}</span>
+                  from <span className="font-bold text-brand-purple">SAR {(celeb.price_range?.greeting?.min || 0).toLocaleString()}</span>
                 </div>
               </div>
 
               {canManage && (
                 <div className="mt-3 flex flex-col gap-2">
                   <div className="flex gap-2">
-                    <button
-                      onClick={() => openEdit(celeb)}
+                    <Link
+                      href={`/celebrities/${celeb.id}?mode=view`}
+                      className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-medium border border-brand-purple/20 text-content-secondary hover:border-brand-purple/40 hover:text-brand-purple transition-all"
+                    >
+                      View
+                    </Link>
+                    <Link
+                      href={`/celebrities/${celeb.id}?mode=edit`}
                       className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-medium border border-brand-purple/20 text-content-secondary hover:border-brand-purple/40 hover:text-brand-purple transition-all"
                     >
                       <Edit2 className="w-3 h-3" /> Edit
-                    </button>
+                    </Link>
                     <button
                       onClick={() => toggle(celeb.id)}
                       disabled={busy}
@@ -878,6 +1055,28 @@ export default function CelebritiesPage() {
                       ? <><CheckCircle2 className="w-3 h-3 text-emerald-600" /> Re-clone Voice</>
                       : <><Mic className="w-3 h-3" /> Clone Voice</>}
                   </button>
+
+                  <button
+                    onClick={() => !celeb.portal_admin?.email && createPortalAccess(celeb)}
+                    disabled={portalAccessBusy || !celeb.contact_email || Boolean(celeb.portal_admin?.email)}
+                    className={`w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-medium border transition-all disabled:opacity-60 disabled:cursor-not-allowed ${
+                      celeb.portal_admin?.email
+                        ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                        : 'border-emerald-200 text-emerald-700 hover:bg-emerald-50'
+                    }`}
+                  >
+                    {portalAccessBusy
+                      ? <><Loader2 className="w-3 h-3 animate-spin" /> Sending...</>
+                      : celeb.portal_admin?.email
+                        ? 'Credentials Sent'
+                        : 'Create Portal Access'}
+                  </button>
+
+                  {portalMsg[celeb.id] && (
+                    <p className={`text-[10px] text-center ${portalMsg[celeb.id].toLowerCase().includes('failed') || portalMsg[celeb.id].toLowerCase().includes('denied') ? 'text-red-500' : 'text-emerald-600'}`}>
+                      {portalMsg[celeb.id]}
+                    </p>
+                  )}
 
                   {voiceMsg[celeb.id] && (
                     <p className={`text-[10px] text-center ${voiceMsg[celeb.id].toLowerCase().includes('fail') || voiceMsg[celeb.id].toLowerCase().includes('error') ? 'text-red-500' : 'text-emerald-600'}`}>

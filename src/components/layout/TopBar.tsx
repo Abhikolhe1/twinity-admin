@@ -1,7 +1,7 @@
 'use client'
 import { usePathname, useRouter } from 'next/navigation'
 import { Bell, LogOut, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
-import { clearAdminToken } from '@/lib/api'
+import { clearAdminToken, getPortalMode } from '@/lib/api'
 
 const TITLES: Record<string, string> = {
   '/':            'Dashboard',
@@ -12,6 +12,11 @@ const TITLES: Record<string, string> = {
   '/settings':    'Settings',
   '/team':        'Team',
   '/roles':       'Roles',
+  '/manager/dashboard': 'Manager Dashboard',
+  '/manager/requests': 'Manager Requests',
+  '/celebrity-applications': 'Celebrity Applications',
+  '/celebrity/profile': 'My Profile',
+  '/celebrity/orders': 'My Orders',
 }
 
 interface TopBarProps {
@@ -28,7 +33,7 @@ export default function TopBar({ sidebarOpen, sidebarCollapsed, onMobileToggle, 
 
   function logout() {
     clearAdminToken()
-    router.push('/login')
+    router.push(getPortalMode() === 'celebrity' ? '/celebrity-login' : getPortalMode() === 'manager' ? '/manager-login' : '/login')
   }
 
   return (

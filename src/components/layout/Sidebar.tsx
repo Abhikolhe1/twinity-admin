@@ -2,8 +2,8 @@
 import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname, useRouter } from 'next/navigation'
-import { LayoutDashboard, Users, Star, Film, PhoneCall, Settings, LogOut, ShieldCheck, Users2, FileText, ShieldAlert, Layers } from 'lucide-react'
-import { clearAdminToken } from '@/lib/api'
+import { LayoutDashboard, Users, Star, Film, PhoneCall, Settings, LogOut, ShieldCheck, Users2, FileText, ShieldAlert, Layers, ClipboardList, UserCircle2, Link2, ScrollText, RefreshCw, Wallet, BarChart3 } from 'lucide-react'
+import { clearAdminToken, getPortalMode } from '@/lib/api'
 import { usePermissions } from '@/lib/permissions-context'
 
 const NAV = [
@@ -11,16 +11,27 @@ const NAV = [
   { href: '/customers',   label: 'Customers',   icon: Users,           permission: 'users.view' },
   { href: '/celebrities', label: 'Celebrities', icon: Star,            permission: 'celebrities.view' },
   { href: '/videos',      label: 'Video Jobs',  icon: Film,            permission: 'videos.view' },
+  { href: '/videos/revisions', label: 'Revisions',  icon: RefreshCw,  permission: 'videos.view' },
+  { href: '/refunds',     label: 'Refunds',     icon: Wallet,          permission: 'videos.view' },
   { href: '/leads',       label: 'Leads / CRM', icon: PhoneCall,       permission: 'leads.view' },
+  { href: '/reporting',   label: 'Reporting',   icon: BarChart3,       permission: 'dashboard.view' },
   { href: '/templates',     label: 'Templates',     icon: FileText, permission: 'templates.view' },
   { href: '/product-types', label: 'Product Types', icon: Layers,   permission: 'settings.view' },
+  { href: '/celebrity-applications', label: 'Applications', icon: ClipboardList, permission: 'celebrity_applications.view' },
+  { href: '/celebrity/profile',      label: 'My Profile',   icon: UserCircle2,   permission: 'celebrity.profile.view' },
+  { href: '/celebrity/orders',       label: 'My Orders',    icon: Film,          permission: 'celebrity.orders.view' },
 ]
 
 const ADMIN_NAV = [
-  { href: '/team',          label: 'Team',          icon: Users2,      permission: 'team.view' },
-  { href: '/roles',         label: 'Roles',         icon: ShieldCheck, permission: 'roles.view' },
-  { href: '/blocked-words', label: 'Blocked Words', icon: ShieldAlert, permission: 'settings.manage' },
-  { href: '/settings',      label: 'Settings',      icon: Settings,    permission: 'settings.view' },
+  { href: '/manager/dashboard',   label: 'Manager Desk',       icon: LayoutDashboard, permission: 'manager.dashboard.view' },
+  { href: '/manager/requests',    label: 'All Requests',       icon: ClipboardList,   permission: 'manager.dashboard.view' },
+  { href: '/manager/celebrities',     label: 'Add Celebrity', icon: Star,            permission: 'manager.dashboard.view' },
+  { href: '/team',                label: 'Team',               icon: Users2,      permission: 'team.view' },
+  { href: '/roles',               label: 'Roles',              icon: ShieldCheck, permission: 'roles.view' },
+  { href: '/celebrity-managers',  label: 'Managers',          icon: Link2,       permission: 'celebrity_managers.view' },
+  { href: '/audit-logs',          label: 'Audit Logs',         icon: ScrollText,  permission: 'audit_logs.view' },
+  { href: '/blocked-words',       label: 'Blocked Words',      icon: ShieldAlert, permission: 'settings.manage' },
+  { href: '/settings',            label: 'Settings',           icon: Settings,    permission: 'settings.view' },
 ]
 
 interface SidebarProps {
@@ -33,21 +44,31 @@ export default function Sidebar({ open, collapsed, onClose }: SidebarProps) {
   const pathname = usePathname()
   const router = useRouter()
   const permissions = usePermissions()
+  const portalMode = getPortalMode()
 
-  const visibleNav = NAV.filter(item => permissions.includes(item.permission))
-  const visibleAdminNav = ADMIN_NAV.filter(item => permissions.includes(item.permission))
+  const visibleNav = NAV.filter(item => {
+    if (!permissions.includes(item.permission)) return false
+    if (portalMode === 'admin' && item.href.startsWith('/celebrity/')) return false
+    return true
+  })
+
+  const visibleAdminNav = ADMIN_NAV.filter(item => {
+    if (!permissions.includes(item.permission)) return false
+    if (portalMode === 'admin' && item.href.startsWith('/manager/')) return false
+    return true
+  })
 
   function logout() {
     clearAdminToken()
-    router.push('/login')
+    router.push(getPortalMode() === 'celebrity' ? '/celebrity-login' : getPortalMode() === 'manager' ? '/manager-login' : '/login')
   }
 
   return (
     <aside
       className={[
-        'fixed lg:relative inset-y-0 left-0 z-30',
+        'fixed inset-y-0 left-0 z-30 lg:sticky lg:top-0',
         'flex flex-col bg-white border-r border-brand-purple/10 shadow-sm',
-        'transition-all duration-300 min-h-screen shrink-0',
+        'h-screen shrink-0 overflow-hidden transition-all duration-300',
         open ? 'translate-x-0' : '-translate-x-full lg:translate-x-0',
         collapsed ? 'lg:w-16 w-56' : 'w-56',
       ].join(' ')}
