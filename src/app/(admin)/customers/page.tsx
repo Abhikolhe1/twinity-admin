@@ -411,7 +411,7 @@ export default function UsersPage() {
         </div>
       </div>
 
-      <div className="bg-white rounded-2xl border border-brand-purple/12 shadow-card overflow-hidden">
+      <div className="bg-white rounded-2xl border border-brand-purple/12 shadow-card overflow-visible">
         <table className="w-full">
           <thead>
             <tr className="border-b border-brand-purple/8">
@@ -489,7 +489,7 @@ export default function UsersPage() {
                       </button>
 
                       {openActionMenu === user.id && (
-                        <div className="absolute right-0 top-full z-20 mt-2 w-44 rounded-xl border border-brand-purple/12 bg-white p-2 shadow-xl">
+                        <div className="absolute bottom-full right-0 z-20 mb-2 w-44 rounded-xl border border-brand-purple/12 bg-white p-2 shadow-xl">
                           <button
                             type="button"
                             onClick={() => {

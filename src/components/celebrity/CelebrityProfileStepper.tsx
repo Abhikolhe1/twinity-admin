@@ -1,7 +1,8 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { ChevronLeft, ImagePlus, Loader2, Trash2, Upload, X } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { AlertCircle, Check, ChevronDown, ChevronLeft, ExternalLink, FileText, ImagePlus, Loader2, Play, Trash2, Upload, X } from 'lucide-react'
 import { adminApi, type CelebrityPortalTemplate, type ManagerDirectoryEntry } from '@/lib/api'
 
 const AVATAR_COLORS = [
@@ -22,6 +23,24 @@ const MANAGER_PERMISSION_OPTIONS = [
   { key: 'view_earnings', label: 'View earnings' },
   { key: 'manage_profile', label: 'Manage profile updates' },
 ] as const
+
+const INDUSTRY_OPTIONS = [
+  'entertainment',
+  'sports',
+  'business',
+  'music',
+  'media',
+  'fashion',
+  'comedy',
+  'food',
+  'gaming',
+  'fitness',
+] as const
+
+type CelebrityMasters = {
+  languages: string[]
+  nationalities: string[]
+}
 
 type SocialLinks = {
   instagram?: string
@@ -49,6 +68,8 @@ type ApprovalPreferences = {
   slaHours: number
   fastTrackEligible: boolean
   templatePolicyReviewed: boolean
+  commercialLicenseNumber?: string
+  commercialLicenseDocumentUrl?: string
 }
 
 type ManagerSettings = {
@@ -115,7 +136,7 @@ type StepKey =
   | 'media'
 
 type CelebrityProfileStepperProps = {
-  scope: 'self' | 'admin'
+  scope: 'self' | 'admin' | 'manager'
   celebrityId?: string
   readOnly?: boolean
   onClose?: () => void
@@ -172,6 +193,8 @@ const DEFAULT_PROFILE: Profile = {
     slaHours: 48,
     fastTrackEligible: false,
     templatePolicyReviewed: false,
+    commercialLicenseNumber: '',
+    commercialLicenseDocumentUrl: '',
   },
   preapproved_template_ids: [],
   manager_settings: {
@@ -218,6 +241,14 @@ function isValidUrl(value: string): boolean {
   }
 }
 
+function isRestrictedCommercialMarket(nationality: string) {
+  const normalized = nationality.trim().toLowerCase()
+  return normalized === 'saudi arabia'
+    || normalized === 'saudi'
+    || normalized === 'uae'
+    || normalized === 'united arab emirates'
+}
+
 function isDataUrl(value: string): boolean {
   return value.startsWith('data:')
 }
@@ -240,6 +271,97 @@ function parseFlexibleUrls(value: string): string[] {
     .split(/[\s,]+/)
     .map((item) => item.trim())
     .filter(Boolean)
+}
+
+function isManagedApprovedMediaUrl(value: string): boolean {
+  return /\/approved-media\//i.test(value)
+}
+
+async function openApprovedMedia(url: string) {
+  const openUrl = (targetUrl: string) => {
+    const link = document.createElement('a')
+    link.href = targetUrl
+    link.target = '_blank'
+    link.rel = 'noopener noreferrer'
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+  }
+
+  if (!isDataUrl(url)) {
+    openUrl(url)
+    return
+  }
+
+  try {
+    const response = await fetch(url)
+    const blob = await response.blob()
+    const blobUrl = URL.createObjectURL(blob)
+    openUrl(blobUrl)
+    window.setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000)
+  } catch {}
+}
+
+type ApprovedMediaKind = 'image' | 'video' | 'audio' | 'pdf' | 'file'
+
+function getDataUrlMime(value: string): string {
+  const match = value.match(/^data:([^;]+);base64,/)
+  return match?.[1]?.toLowerCase() || ''
+}
+
+function inferApprovedMediaKind(value: string): ApprovedMediaKind {
+  if (isDataUrl(value)) {
+    const mime = getDataUrlMime(value)
+    if (mime.startsWith('image/')) return 'image'
+    if (mime.startsWith('video/')) return 'video'
+    if (mime.startsWith('audio/')) return 'audio'
+    if (mime === 'application/pdf') return 'pdf'
+    return 'file'
+  }
+
+  const clean = value.split('?')[0].toLowerCase()
+  if (/\.(png|jpg|jpeg|webp|gif|svg)$/.test(clean)) return 'image'
+  if (/\.(mp4|mov|webm|m4v|avi)$/.test(clean)) return 'video'
+  if (/\.(mp3|wav|m4a|aac|ogg)$/.test(clean)) return 'audio'
+  if (/\.pdf$/.test(clean)) return 'pdf'
+  return 'file'
+}
+
+function getApprovedMediaName(value: string, index: number): string {
+  if (isDataUrl(value)) {
+    const kind = inferApprovedMediaKind(value)
+    return `Uploaded ${kind.toUpperCase()} ${index + 1}`
+  }
+
+  try {
+    const pathname = new URL(value).pathname
+    const lastSegment = pathname.split('/').filter(Boolean).pop()
+    return decodeURIComponent(lastSegment || `media-${index + 1}`)
+  } catch {
+    return `Media ${index + 1}`
+  }
+}
+
+function getApprovedMediaSubtitle(value: string): string {
+  const kind = inferApprovedMediaKind(value)
+  if (isDataUrl(value)) {
+    return kind === 'pdf'
+      ? 'PDF uploaded locally and will be saved with this section.'
+      : `${kind.charAt(0).toUpperCase() + kind.slice(1)} uploaded locally and will be saved with this section.`
+  }
+
+  switch (kind) {
+    case 'pdf':
+      return 'PDF document'
+    case 'video':
+      return 'Hosted video file'
+    case 'audio':
+      return 'Hosted audio file'
+    case 'image':
+      return 'Hosted image file'
+    default:
+      return 'Hosted media URL'
+  }
 }
 
 function deriveSavedSteps(profile: Profile): boolean[] {
@@ -308,7 +430,8 @@ function normalizeProfile(input: any): Profile {
   }
 }
 
-function buildStepPayload(step: StepKey, profile: Profile) {
+function buildStepPayload(step: StepKey, profile: Profile, options?: { managerRegistrationMode?: boolean }) {
+  const managerRegistrationMode = Boolean(options?.managerRegistrationMode)
   switch (step) {
     case 'identity':
       return {
@@ -331,6 +454,12 @@ function buildStepPayload(step: StepKey, profile: Profile) {
         voice_model_id: profile.voice_model_id,
         social_links: profile.social_links,
         price_range: profile.price_range,
+        ...(managerRegistrationMode ? {
+          approval_preferences: {
+            commercialLicenseNumber: profile.approval_preferences.commercialLicenseNumber || '',
+            commercialLicenseDocumentUrl: profile.approval_preferences.commercialLicenseDocumentUrl || '',
+          },
+        } : {}),
       }
     case 'restrictions':
       return {
@@ -435,9 +564,13 @@ export default function CelebrityProfileStepper({
   onClose,
   onUpdated,
 }: CelebrityProfileStepperProps) {
+  const router = useRouter()
   const [profile, setProfile] = useState<Profile | null>(null)
   const [templates, setTemplates] = useState<CelebrityPortalTemplate[]>([])
   const [availableManagers, setAvailableManagers] = useState<ManagerDirectoryEntry[]>([])
+  const [masters, setMasters] = useState<CelebrityMasters>({ languages: [], nationalities: [] })
+  const [mastersLoading, setMastersLoading] = useState(true)
+  const [languageMenuOpen, setLanguageMenuOpen] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -449,8 +582,28 @@ export default function CelebrityProfileStepper({
   const [completedSteps, setCompletedSteps] = useState<boolean[]>(() => Array.from({ length: STEPS.length }, () => false))
   const imageInputRef = useRef<HTMLInputElement>(null)
   const approvedMediaInputRef = useRef<HTMLInputElement>(null)
+  const licenseFileRef = useRef<HTMLInputElement>(null)
+  const languageMenuRef = useRef<HTMLDivElement>(null)
 
   const step = STEPS[stepIndex]
+  const managerScope = scope === 'manager'
+  const managerSectionReadOnly = readOnly || managerScope
+  const managerRegistrationMode = scope === 'manager'
+  const requiresCommercialLicense = managerRegistrationMode && isRestrictedCommercialMarket(profile?.nationality || '')
+  const managerIndustryOptions = profile?.industry && !INDUSTRY_OPTIONS.includes(profile.industry as typeof INDUSTRY_OPTIONS[number])
+    ? [profile.industry, ...INDUSTRY_OPTIONS]
+    : INDUSTRY_OPTIONS
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (!languageMenuRef.current?.contains(event.target as Node)) {
+        setLanguageMenuOpen(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -458,33 +611,97 @@ export default function CelebrityProfileStepper({
       setLoading(true)
       setError('')
       try {
-        const [res, managersRes] = await Promise.all([
+        if (scope === 'manager' && !celebrityId) {
+          const [managerRes, mastersRes] = await Promise.all([
+            adminApi.me('manager'),
+            managerRegistrationMode ? adminApi.getCelebrityOnboardingMasters() : Promise.resolve({ data: { nationalities: [], languages: [] } }),
+          ])
+          if (cancelled) return
+          const manager = (managerRes as any).data || {}
+          setMasters({
+            nationalities: Array.isArray((mastersRes as any).data?.nationalities) ? (mastersRes as any).data.nationalities : [],
+            languages: Array.isArray((mastersRes as any).data?.languages) ? (mastersRes as any).data.languages : [],
+          })
+          setMastersLoading(false)
+          const baseProfile = normalizeProfile({
+            ...DEFAULT_PROFILE,
+            contact_email: '',
+            contact_phone: '',
+            manager_settings: {
+              selfManaged: false,
+              agencyName: String(manager.agency_name || ''),
+              managerName: String(manager.name || ''),
+              managerEmail: String(manager.email || ''),
+              managerPhone: String(manager.phone || ''),
+              permissions: MANAGER_PERMISSION_OPTIONS.map((option) => option.key),
+              selectedManagerId: String(manager.id || ''),
+            },
+          })
+          setProfile(baseProfile)
+          setTemplates([])
+          setAvailableManagers(manager.id ? [{
+            id: String(manager.id),
+            name: String(manager.name || ''),
+            email: String(manager.email || ''),
+            phone: String(manager.phone || ''),
+            agency_name: String(manager.agency_name || ''),
+          }] : [])
+          setReviewNote('')
+          setCompletedSteps(Array.from({ length: STEPS.length }, () => false))
+          setStepIndex(0)
+          return
+        }
+
+        const [res, managersRes, mastersRes] = await Promise.all([
           scope === 'self'
             ? adminApi.getMyCelebrityProfile()
-            : adminApi.getCelebrityProfileByAdmin(celebrityId!),
+            : scope === 'manager'
+              ? adminApi.getManagerCelebrityProfile(celebrityId!)
+              : adminApi.getCelebrityProfileByAdmin(celebrityId!),
           scope === 'admin'
             ? adminApi.managers()
-            : adminApi.getProfileManagers(),
+            : scope === 'manager'
+              ? adminApi.me('manager')
+              : adminApi.getProfileManagers(),
+          managerRegistrationMode ? adminApi.getCelebrityOnboardingMasters() : Promise.resolve({ data: { nationalities: [], languages: [] } }),
         ])
         if (cancelled) return
         const normalized = normalizeProfile(res.data)
         const savedSteps = deriveSavedSteps(normalized)
         setProfile(normalized)
         setTemplates(res.templates ?? [])
-        setAvailableManagers((managersRes.data || []).map((manager) => ({
-          id: manager.id,
-          name: manager.name,
-          email: manager.email,
-          phone: manager.phone ?? '',
-          agency_name: manager.agency_name ?? '',
-        })))
+        setAvailableManagers(
+          scope === 'manager'
+            ? [{
+                id: String((managersRes as any).data?.id || ''),
+                name: String((managersRes as any).data?.name || ''),
+                email: String((managersRes as any).data?.email || ''),
+                phone: String((managersRes as any).data?.phone || ''),
+                agency_name: String((managersRes as any).data?.agency_name || ''),
+              }].filter((manager) => manager.id)
+            : ((managersRes as any).data || []).map((manager: any) => ({
+                id: manager.id,
+                name: manager.name,
+                email: manager.email,
+                phone: manager.phone ?? '',
+                agency_name: manager.agency_name ?? '',
+              })),
+        )
+        setMasters({
+          nationalities: Array.isArray((mastersRes as any).data?.nationalities) ? (mastersRes as any).data.nationalities : [],
+          languages: Array.isArray((mastersRes as any).data?.languages) ? (mastersRes as any).data.languages : [],
+        })
+        setMastersLoading(false)
         setReviewNote(String((res.data as any).review_notes || ''))
         setCompletedSteps(savedSteps)
         setStepIndex(getResumeStepIndex(savedSteps))
       } catch (err: any) {
         if (!cancelled) setError(err.message || 'Failed to load profile')
       } finally {
-        if (!cancelled) setLoading(false)
+        if (!cancelled) {
+          setMastersLoading(false)
+          setLoading(false)
+        }
       }
     }
     if (scope === 'admin' && !celebrityId) return
@@ -549,6 +766,19 @@ export default function CelebrityProfileStepper({
     })
   }
 
+  function toggleLanguage(language: string) {
+    setProfile((current) => {
+      if (!current) return current
+      const selected = current.languages.includes(language)
+      return {
+        ...current,
+        languages: selected
+          ? current.languages.filter((item) => item !== language)
+          : [...current.languages, language],
+      }
+    })
+  }
+
   function applyExistingManager(managerId: string) {
     if (!profile) return
     const selectedManager = availableManagers.find((manager) => manager.id === managerId)
@@ -591,6 +821,22 @@ export default function CelebrityProfileStepper({
     }
   }
 
+  async function handleLicenseFileChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    if (!file || !profile) return
+    try {
+      const dataUrl = await readFileAsDataUrl(file)
+      setField('approval_preferences', {
+        ...profile.approval_preferences,
+        commercialLicenseDocumentUrl: dataUrl,
+      })
+    } catch (err: any) {
+      setError(err.message || 'Failed to read license file')
+    } finally {
+      event.target.value = ''
+    }
+  }
+
   async function saveSection(goNext = false) {
     if (!profile || readOnly) return
     const validationError = validateStep(step.key, profile)
@@ -604,10 +850,19 @@ export default function CelebrityProfileStepper({
     setError('')
     setSuccess('')
     try {
-      const payload = buildStepPayload(step.key, profile)
+      const payload = buildStepPayload(step.key, profile, { managerRegistrationMode })
+      if (scope === 'manager' && !celebrityId) {
+        const res: any = await adminApi.createManagerCelebrityDraft(payload)
+        setSuccess(`${step.title} saved.`)
+        onUpdated?.()
+        router.replace(`/manager/celebrities/${res.data.id}`)
+        return
+      }
       const res: any = scope === 'self'
         ? await adminApi.saveMyCelebrityProfile(payload)
-        : await adminApi.saveCelebrityProfileByAdmin(celebrityId!, payload)
+        : scope === 'manager'
+          ? await adminApi.saveManagerCelebrityProfile(celebrityId!, payload)
+          : await adminApi.saveCelebrityProfileByAdmin(celebrityId!, payload)
       const normalized = normalizeProfile(res.data)
       setProfile(normalized)
       setDraftFields({})
@@ -633,16 +888,22 @@ export default function CelebrityProfileStepper({
     setError('')
     setSuccess('')
     try {
-      const payload = buildStepPayload('media', profile)
+      const payload = buildStepPayload('media', profile, { managerRegistrationMode })
       const saveRes: any = scope === 'self'
         ? await adminApi.saveMyCelebrityProfile(payload)
-        : await adminApi.saveCelebrityProfileByAdmin(celebrityId!, payload)
+        : scope === 'manager'
+          ? await adminApi.saveManagerCelebrityProfile(celebrityId!, payload)
+          : await adminApi.saveCelebrityProfileByAdmin(celebrityId!, payload)
       const normalized = normalizeProfile(saveRes.data)
       setProfile(normalized)
       setDraftFields({})
       setCompletedSteps((current) => current.map((done, index) => index === stepIndex ? true : done))
 
-      await adminApi.submitMyCelebrityProfile()
+      if (scope === 'manager') {
+        await adminApi.submitManagerCelebrityProfile(celebrityId!)
+      } else {
+        await adminApi.submitMyCelebrityProfile()
+      }
       setSuccess('Profile submitted for superadmin review.')
       onUpdated?.()
       if (typeof window !== 'undefined') {
@@ -663,7 +924,11 @@ export default function CelebrityProfileStepper({
     setError('')
     setSuccess('')
     try {
-      await adminApi.activateCelebrityProfile(celebrityId)
+      if (scope === 'manager') {
+        await adminApi.activateManagerCelebrityProfile(celebrityId)
+      } else {
+        await adminApi.activateCelebrityProfile(celebrityId)
+      }
       setSuccess('Celebrity activated for full portal access.')
       onUpdated?.()
     } catch (err: any) {
@@ -710,15 +975,17 @@ export default function CelebrityProfileStepper({
       <div className={onClose ? 'flex items-center justify-between border-b border-brand-purple/10 px-6 py-4' : 'mb-6'}>
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.18em] text-brand-purple">
-            {scope === 'self' ? 'Celebrity Portal' : readOnly ? 'Superadmin View' : 'Superadmin Edit'}
+            {scope === 'self' ? 'Celebrity Portal' : scope === 'manager' ? 'Manager Workspace' : readOnly ? 'Superadmin View' : 'Superadmin Edit'}
           </p>
           <h1 className="mt-2 text-2xl font-bold text-content-primary">
-            {scope === 'self' ? 'Complete your onboarding profile' : readOnly ? 'Celebrity profile details' : 'Review celebrity profile'}
+            {scope === 'self' ? 'Complete your onboarding profile' : scope === 'manager' ? 'Complete celebrity profile' : readOnly ? 'Celebrity profile details' : 'Review celebrity profile'}
           </h1>
           <p className="mt-1 text-sm text-content-muted">
             {scope === 'self'
               ? 'Save each section as you go, then submit the completed profile for review.'
-              : 'Use the same profile stepper to review, edit, and activate approved celebrities.'}
+              : scope === 'manager'
+                ? 'Use the same profile stepper to complete, submit, and activate celebrities assigned to your manager workspace.'
+                : 'Use the same profile stepper to review, edit, and activate approved celebrities.'}
           </p>
         </div>
         {onClose && (
@@ -784,8 +1051,44 @@ export default function CelebrityProfileStepper({
                   <Field label="Stage name *"><input value={profile.name} onChange={(e) => setField('name', e.target.value)} className={inputCls} disabled={readOnly} placeholder="Rakan Al Qassimi" /></Field>
                   <Field label="Stage name (Arabic) *"><input value={profile.name_ar} onChange={(e) => setField('name_ar', e.target.value)} className={inputCls} dir="rtl" disabled={readOnly} placeholder="راكان القاسمي" /></Field>
                   <Field label="Legal name *"><input value={profile.legal_name || ''} onChange={(e) => setField('legal_name', e.target.value)} className={inputCls} disabled={readOnly} placeholder="Rakan Abdullah Al Qassimi" /></Field>
-                  <Field label="Industry *"><input value={profile.industry} onChange={(e) => setField('industry', e.target.value)} className={inputCls} disabled={readOnly} placeholder="Entertainment" /></Field>
-                  <Field label="Nationality *"><input value={profile.nationality} onChange={(e) => setField('nationality', e.target.value)} className={inputCls} disabled={readOnly} placeholder="Saudi Arabian" /></Field>
+                  {managerRegistrationMode ? (
+                    <Field label="Industry *">
+                      <select
+                        value={profile.industry}
+                        onChange={(e) => setField('industry', e.target.value)}
+                        className={inputCls}
+                        disabled={readOnly}
+                      >
+                        <option value="">Select industry</option>
+                        {managerIndustryOptions.map((industry) => (
+                          <option key={industry} value={industry}>
+                            {industry.charAt(0).toUpperCase() + industry.slice(1)}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                  ) : (
+                    <Field label="Industry *"><input value={profile.industry} onChange={(e) => setField('industry', e.target.value)} className={inputCls} disabled={readOnly} placeholder="Entertainment" /></Field>
+                  )}
+                  {managerRegistrationMode ? (
+                    <Field label="Nationality *">
+                      <select
+                        value={profile.nationality}
+                        onChange={(e) => setField('nationality', e.target.value)}
+                        className={inputCls}
+                        disabled={readOnly || mastersLoading}
+                      >
+                        <option value="">{mastersLoading ? 'Loading nationalities...' : 'Select nationality'}</option>
+                        {masters.nationalities.map((nationality) => (
+                          <option key={nationality} value={nationality}>
+                            {nationality}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                  ) : (
+                    <Field label="Nationality *"><input value={profile.nationality} onChange={(e) => setField('nationality', e.target.value)} className={inputCls} disabled={readOnly} placeholder="Saudi Arabian" /></Field>
+                  )}
                   <Field label="Nationality (Arabic) *"><input value={profile.nationality_ar} onChange={(e) => setField('nationality_ar', e.target.value)} className={inputCls} dir="rtl" disabled={readOnly} placeholder="سعودي" /></Field>
                   <Field label="Region"><input value={profile.region || ''} onChange={(e) => setField('region', e.target.value)} className={inputCls} disabled={readOnly} placeholder="Riyadh" /></Field>
                   <Field label="Phone number"><input value={profile.contact_phone || ''} onChange={(e) => setField('contact_phone', sanitizePhone(e.target.value))} inputMode="numeric" className={inputCls} disabled={readOnly} placeholder="9665XXXXXXXX" /></Field>
@@ -798,17 +1101,123 @@ export default function CelebrityProfileStepper({
                       placeholder="celebrity@twinity.ai"
                     />
                   </Field>
-                  <Field label="ElevenLabs voice ID">
-                    <input
-                      value={profile.voice_model_id || ''}
-                      onChange={(e) => setField('voice_model_id', e.target.value)}
-                      className={inputCls}
-                      disabled={readOnly}
-                      placeholder="EXAVITQu4vr4xnSDxMaL"
-                    />
-                  </Field>
-                  <Field label="Languages (comma separated) *"><input value={getDraftValue('languages', profile.languages.join(', '))} onChange={(e) => setDraftField('languages', e.target.value, () => setField('languages', splitCsv(e.target.value)))} className={inputCls} disabled={readOnly} placeholder="Arabic, English" /></Field>
+                  {managerRegistrationMode ? (
+                    <Field label="Languages *">
+                      <div ref={languageMenuRef} className="relative">
+                        <button
+                          type="button"
+                          onClick={() => !mastersLoading && !readOnly && setLanguageMenuOpen((current) => !current)}
+                          className={`${inputCls} flex min-h-[50px] items-center justify-between gap-3 text-left ${mastersLoading ? 'opacity-60' : ''}`}
+                          disabled={readOnly || mastersLoading}
+                        >
+                          <span className={profile.languages.length ? 'text-content-primary' : 'text-content-muted'}>
+                            {profile.languages.length ? profile.languages.join(', ') : mastersLoading ? 'Loading languages...' : 'Select languages'}
+                          </span>
+                          <ChevronDown className={`h-4 w-4 shrink-0 transition-transform ${languageMenuOpen ? 'rotate-180' : ''}`} />
+                        </button>
+
+                        {languageMenuOpen && (
+                          <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-20 max-h-64 overflow-auto rounded-2xl border border-brand-purple/12 bg-white p-2 shadow-[0_16px_40px_rgba(15,10,30,0.10)]">
+                            {masters.languages.map((language) => {
+                              const selected = profile.languages.includes(language)
+                              return (
+                                <button
+                                  key={language}
+                                  type="button"
+                                  onClick={() => toggleLanguage(language)}
+                                  className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm transition-all ${
+                                    selected ? 'bg-brand-purple/8 text-brand-purple' : 'text-content-primary hover:bg-brand-purple/5'
+                                  }`}
+                                >
+                                  <span>{language}</span>
+                                  {selected && <Check className="h-4 w-4" />}
+                                </button>
+                              )
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    </Field>
+                  ) : (
+                    <Field label="Languages (comma separated) *"><input value={getDraftValue('languages', profile.languages.join(', '))} onChange={(e) => setDraftField('languages', e.target.value, () => setField('languages', splitCsv(e.target.value)))} className={inputCls} disabled={readOnly} placeholder="Arabic, English" /></Field>
+                  )}
                 </div>
+
+                {managerRegistrationMode && (
+                  <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
+                    <div className="flex items-start gap-3">
+                      <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                      <p>
+                        If the celebrity is from <strong>UAE</strong> or <strong>Saudi Arabia</strong>, a license number or uploaded license is required for
+                        commercial ads and campaigns. Without one, the celebrity can still be approved for <strong>greeting</strong> requests only.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {requiresCommercialLicense && (
+                  <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                    <Field label="License number">
+                      <input
+                        value={profile.approval_preferences.commercialLicenseNumber || ''}
+                        onChange={(e) => setField('approval_preferences', {
+                          ...profile.approval_preferences,
+                          commercialLicenseNumber: e.target.value,
+                        })}
+                        className={inputCls}
+                        disabled={readOnly}
+                        placeholder="Enter the Saudi/UAE license number"
+                      />
+                    </Field>
+                    <div className="block">
+                      <span className="mb-1.5 block text-sm font-semibold text-content-secondary">Upload license</span>
+                      <input
+                        ref={licenseFileRef}
+                        type="file"
+                        accept="image/*,.pdf"
+                        className="hidden"
+                        onChange={handleLicenseFileChange}
+                        disabled={readOnly}
+                      />
+                      <div className="flex flex-wrap items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() => licenseFileRef.current?.click()}
+                          disabled={readOnly}
+                          className="inline-flex items-center justify-center gap-2 rounded-xl border border-brand-purple/25 px-3 py-2.5 text-sm font-medium text-content-secondary transition-all hover:border-brand-purple/50 hover:bg-surface-subtle hover:text-brand-purple disabled:cursor-default disabled:opacity-60"
+                        >
+                          <Upload className="h-4 w-4" />
+                          {profile.approval_preferences.commercialLicenseDocumentUrl ? 'Replace uploaded license' : 'Upload license image or PDF'}
+                        </button>
+                        {profile.approval_preferences.commercialLicenseDocumentUrl && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => void openApprovedMedia(profile.approval_preferences.commercialLicenseDocumentUrl || '')}
+                              className="inline-flex items-center gap-2 rounded-xl border border-brand-purple/20 px-3 py-2.5 text-sm font-medium text-brand-purple transition-all hover:bg-surface-subtle"
+                            >
+                              <ExternalLink className="h-4 w-4" />
+                              Open uploaded license
+                            </button>
+                            {!readOnly && (
+                              <button
+                                type="button"
+                                onClick={() => setField('approval_preferences', {
+                                  ...profile.approval_preferences,
+                                  commercialLicenseDocumentUrl: '',
+                                })}
+                                className="inline-flex items-center justify-center gap-2 rounded-xl border border-red-200 px-3 py-2.5 text-sm font-medium text-red-500 transition-all hover:bg-red-50"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                                Remove
+                              </button>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 <div className="mt-4 grid gap-4">
                   <Field label="Profile image *">
@@ -906,7 +1315,7 @@ export default function CelebrityProfileStepper({
                 </div>
 
                 <div className="mt-6">
-                  <p className="mb-3 text-sm font-semibold text-content-secondary">Pricing (USD)</p>
+                  <p className="mb-3 text-sm font-semibold text-content-secondary">Pricing (SAR)</p>
                   <div className="grid gap-4">
                     {[
                       { label: 'Personal Greetings', key: 'greeting' as const },
@@ -915,26 +1324,36 @@ export default function CelebrityProfileStepper({
                       <div key={row.key} className="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
                         <div>
                           <p className="mb-1.5 text-xs text-content-muted">{row.label} - Min</p>
-                          <input
-                            type="number"
-                            min="0"
-                            value={profile.price_range?.[row.key]?.min ?? ''}
-                            onChange={(e) => setField('price_range', { ...profile.price_range, [row.key]: { min: Number(e.target.value || 0), max: profile.price_range?.[row.key]?.max ?? 0 } })}
-                            className={inputCls}
-                            disabled={readOnly}
-                          />
+                          <div className="relative">
+                            <input
+                              type="number"
+                              min="0"
+                              value={profile.price_range?.[row.key]?.min ?? ''}
+                              onChange={(e) => setField('price_range', { ...profile.price_range, [row.key]: { min: Number(e.target.value || 0), max: profile.price_range?.[row.key]?.max ?? 0 } })}
+                              className={`${inputCls} pr-14`}
+                              disabled={readOnly}
+                            />
+                            <span className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-xs font-semibold uppercase tracking-[0.12em] text-content-muted">
+                              SAR
+                            </span>
+                          </div>
                         </div>
                         <span className="mt-5 text-sm text-content-muted">-</span>
                         <div>
                           <p className="mb-1.5 text-xs text-content-muted">{row.label} - Max</p>
-                          <input
-                            type="number"
-                            min="0"
-                            value={profile.price_range?.[row.key]?.max ?? ''}
-                            onChange={(e) => setField('price_range', { ...profile.price_range, [row.key]: { min: profile.price_range?.[row.key]?.min ?? 0, max: Number(e.target.value || 0) } })}
-                            className={inputCls}
-                            disabled={readOnly}
-                          />
+                          <div className="relative">
+                            <input
+                              type="number"
+                              min="0"
+                              value={profile.price_range?.[row.key]?.max ?? ''}
+                              onChange={(e) => setField('price_range', { ...profile.price_range, [row.key]: { min: profile.price_range?.[row.key]?.min ?? 0, max: Number(e.target.value || 0) } })}
+                              className={`${inputCls} pr-14`}
+                              disabled={readOnly}
+                            />
+                            <span className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-xs font-semibold uppercase tracking-[0.12em] text-content-muted">
+                              SAR
+                            </span>
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -1024,7 +1443,7 @@ export default function CelebrityProfileStepper({
                     permissions: checked ? [] : profile.manager_settings.permissions,
                     selectedManagerId: checked ? '' : profile.manager_settings.selectedManagerId,
                   })}
-                  disabled={readOnly}
+                  disabled={managerSectionReadOnly}
                 />
                 {!profile.manager_settings.selfManaged && (
                   <div className="mt-4 grid gap-4">
@@ -1036,7 +1455,7 @@ export default function CelebrityProfileStepper({
                             if (e.target.value) applyExistingManager(e.target.value)
                           }}
                           className={inputCls}
-                          disabled={readOnly}
+                          disabled={managerSectionReadOnly}
                         >
                           <option value="">Select an existing manager to prefill details</option>
                           {availableManagers.map((manager) => (
@@ -1048,16 +1467,16 @@ export default function CelebrityProfileStepper({
                       </Field>
                     )}
                     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                      <Field label="Agency name"><input value={profile.manager_settings.agencyName} onChange={(e) => setField('manager_settings', { ...profile.manager_settings, agencyName: e.target.value })} className={inputCls} disabled={readOnly} placeholder="Twinity Talent Management" /></Field>
-                      <Field label="Manager / agent name *"><input value={profile.manager_settings.managerName} onChange={(e) => setField('manager_settings', { ...profile.manager_settings, managerName: e.target.value })} className={inputCls} disabled={readOnly} placeholder="Sara Ahmed" /></Field>
-                      <Field label="Manager / agent email *"><input value={profile.manager_settings.managerEmail} onChange={(e) => setField('manager_settings', { ...profile.manager_settings, managerEmail: e.target.value })} className={inputCls} disabled={readOnly} placeholder="manager@agency.com" /></Field>
-                      <Field label="Manager / agent phone"><input value={profile.manager_settings.managerPhone} onChange={(e) => setField('manager_settings', { ...profile.manager_settings, managerPhone: sanitizePhone(e.target.value) })} inputMode="numeric" className={inputCls} disabled={readOnly} placeholder="9665XXXXXXXX" /></Field>
+                      <Field label="Agency name"><input value={profile.manager_settings.agencyName} onChange={(e) => setField('manager_settings', { ...profile.manager_settings, agencyName: e.target.value })} className={inputCls} disabled={managerSectionReadOnly} placeholder="Twinity Talent Management" /></Field>
+                      <Field label="Manager / agent name *"><input value={profile.manager_settings.managerName} onChange={(e) => setField('manager_settings', { ...profile.manager_settings, managerName: e.target.value })} className={inputCls} disabled={managerSectionReadOnly} placeholder="Sara Ahmed" /></Field>
+                      <Field label="Manager / agent email *"><input value={profile.manager_settings.managerEmail} onChange={(e) => setField('manager_settings', { ...profile.manager_settings, managerEmail: e.target.value })} className={inputCls} disabled={managerSectionReadOnly} placeholder="manager@agency.com" /></Field>
+                      <Field label="Manager / agent phone"><input value={profile.manager_settings.managerPhone} onChange={(e) => setField('manager_settings', { ...profile.manager_settings, managerPhone: sanitizePhone(e.target.value) })} inputMode="numeric" className={inputCls} disabled={managerSectionReadOnly} placeholder="9665XXXXXXXX" /></Field>
                     </div>
                     <Field label="Delegated permissions *">
                       <div className="grid gap-2 sm:grid-cols-2">
                         {MANAGER_PERMISSION_OPTIONS.map((option) => (
                           <label key={option.key} className="flex items-center gap-3 rounded-xl border border-brand-purple/12 px-4 py-3">
-                            <input type="checkbox" checked={profile.manager_settings.permissions.includes(option.key)} onChange={() => toggleManagerPermission(option.key)} className="h-4 w-4 rounded border-brand-purple/30" disabled={readOnly} />
+                            <input type="checkbox" checked={profile.manager_settings.permissions.includes(option.key)} onChange={() => toggleManagerPermission(option.key)} className="h-4 w-4 rounded border-brand-purple/30" disabled={managerSectionReadOnly} />
                             <span className="text-sm text-content-secondary">{option.label}</span>
                           </label>
                         ))}
@@ -1070,7 +1489,8 @@ export default function CelebrityProfileStepper({
 
             {step.key === 'media' && (
               <>
-                <Field label="Approved media URLs *">
+                <div className="block">
+                  <span className="mb-1.5 block text-sm font-semibold text-content-secondary">Approved media URLs *</span>
                   <div className="space-y-3">
                     <div className="flex flex-wrap items-center gap-3">
                       <input
@@ -1097,29 +1517,67 @@ export default function CelebrityProfileStepper({
                     </div>
 
                     {profile.approved_media_urls.length > 0 && (
-                      <div className="space-y-2">
+                      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8">
                         {profile.approved_media_urls.map((mediaUrl, index) => {
-                          const isUploaded = isDataUrl(mediaUrl)
+                          const mediaKind = inferApprovedMediaKind(mediaUrl)
+                          const mediaName = getApprovedMediaName(mediaUrl, index)
+                          const mediaSubtitle = getApprovedMediaSubtitle(mediaUrl)
+                          const isImage = mediaKind === 'image'
+
                           return (
-                            <div key={`${mediaUrl.slice(0, 32)}-${index}`} className="flex items-center justify-between gap-3 rounded-xl border border-brand-purple/12 bg-white px-3 py-2.5">
-                              <div className="min-w-0 flex-1">
-                                <p className="truncate text-sm font-medium text-content-primary">
-                                  {isUploaded ? `Uploaded media ${index + 1}` : mediaUrl}
-                                </p>
-                                <p className="mt-0.5 text-xs text-content-muted">
-                                  {isUploaded ? 'Will be uploaded when this section is saved.' : 'Hosted media URL'}
-                                </p>
+                            <div key={`${mediaUrl.slice(0, 32)}-${index}`} className="overflow-hidden rounded-lg border border-brand-purple/12 bg-white">
+                              <div className="flex h-14 items-center justify-center border-b border-brand-purple/10 bg-surface-subtle/60">
+                                {isImage ? (
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  <img src={mediaUrl} alt={mediaName} className="h-full w-full object-cover" />
+                                ) : mediaKind === 'pdf' ? (
+                                  <div className="flex flex-col items-center gap-1 text-red-500">
+                                    <FileText className="h-4 w-4" />
+                                    <span className="text-[8px] font-semibold uppercase tracking-[0.12em]">PDF</span>
+                                  </div>
+                                ) : mediaKind === 'video' ? (
+                                  <div className="flex flex-col items-center gap-1 text-brand-purple">
+                                    <Play className="h-4 w-4" />
+                                    <span className="text-[8px] font-semibold uppercase tracking-[0.12em]">VIDEO</span>
+                                  </div>
+                                ) : mediaKind === 'audio' ? (
+                                  <div className="flex flex-col items-center gap-1 text-brand-purple">
+                                    <span className="text-[10px] font-bold">AUDIO</span>
+                                    <span className="text-[8px] font-semibold uppercase tracking-[0.12em]">FILE</span>
+                                  </div>
+                                ) : (
+                                  <div className="flex flex-col items-center gap-1 text-content-muted">
+                                    <FileText className="h-4 w-4" />
+                                    <span className="text-[8px] font-semibold uppercase tracking-[0.12em]">FILE</span>
+                                  </div>
+                                )}
                               </div>
-                              {!readOnly && (
-                                <button
-                                  type="button"
-                                  onClick={() => setField('approved_media_urls', profile.approved_media_urls.filter((_, itemIndex) => itemIndex !== index))}
-                                  className="inline-flex items-center justify-center rounded-lg border border-red-200 p-2 text-red-500 transition-all hover:bg-red-50"
-                                  aria-label={`Remove media ${index + 1}`}
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </button>
-                              )}
+
+                              <div className="p-2">
+                                <p className="truncate text-[10px] font-semibold text-content-primary">{mediaName}</p>
+                                <p className="mt-1 line-clamp-1 min-h-[14px] text-[9px] leading-3 text-content-muted">{mediaSubtitle}</p>
+
+                                <div className="mt-1.5 flex items-center justify-between gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => void openApprovedMedia(mediaUrl)}
+                                    className="inline-flex items-center gap-1 rounded-md border border-brand-purple/20 px-1.5 py-1 text-[9px] font-medium text-brand-purple transition-all hover:bg-surface-subtle"
+                                  >
+                                    <ExternalLink className="h-2.5 w-2.5" />
+                                    Open
+                                  </button>
+                                  {!readOnly && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setField('approved_media_urls', profile.approved_media_urls.filter((_, itemIndex) => itemIndex !== index))}
+                                      className="inline-flex items-center justify-center rounded-md border border-red-200 p-1 text-red-500 transition-all hover:bg-red-50"
+                                      aria-label={`Remove media ${index + 1}`}
+                                    >
+                                      <Trash2 className="h-3 w-3" />
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
                             </div>
                           )
                         })}
@@ -1127,11 +1585,11 @@ export default function CelebrityProfileStepper({
                     )}
 
                     <textarea
-                      value={getDraftValue('approved_media_urls', profile.approved_media_urls.filter((item) => !isDataUrl(item)).join('\n'))}
+                      value={getDraftValue('approved_media_urls', profile.approved_media_urls.filter((item) => !isDataUrl(item) && !isManagedApprovedMediaUrl(item)).join('\n'))}
                     onChange={(e) =>
                       setDraftField('approved_media_urls', e.target.value, () =>
                         setField('approved_media_urls', [
-                          ...profile.approved_media_urls.filter((item) => isDataUrl(item)),
+                          ...profile.approved_media_urls.filter((item) => isDataUrl(item) || isManagedApprovedMediaUrl(item)),
                           ...parseFlexibleUrls(e.target.value),
                         ]),
                       )
@@ -1139,10 +1597,10 @@ export default function CelebrityProfileStepper({
                     className={textareaCls}
                     rows={5}
                     disabled={readOnly}
-                    placeholder={'https://example.com/media-1.mp4\nhttps://example.com/media-2.mp4\nor separate with commas'}
-                  />
+                      placeholder={'https://example.com/media-1.mp4\nhttps://example.com/media-2.mp4\nor separate with commas'}
+                    />
                   </div>
-                </Field>
+                </div>
                 <div className="mt-4 grid gap-4 sm:grid-cols-2">
                   <Field label="Signed name *"><input value={profile.contract_acceptance.signedName} onChange={(e) => setField('contract_acceptance', { ...profile.contract_acceptance, signedName: e.target.value })} className={inputCls} disabled={readOnly} /></Field>
                   <Field label="Acceptance status"><input value={profile.contract_acceptance.acceptedAt ? new Date(profile.contract_acceptance.acceptedAt).toLocaleString() : 'Not accepted yet'} disabled className={`${inputCls} bg-surface-subtle text-content-muted`} /></Field>
@@ -1186,7 +1644,7 @@ export default function CelebrityProfileStepper({
                     Save & Continue
                   </button>
                 )}
-                {scope === 'self' && stepIndex === STEPS.length - 1 && (
+                {(scope === 'self' || scope === 'manager') && stepIndex === STEPS.length - 1 && (
                   <button type="button" onClick={submitForReview} disabled={submitting} className="inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition-all disabled:opacity-60" style={{ background: 'linear-gradient(135deg,#9a78fe,#422266)' }}>
                     {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
                     Submit for Review

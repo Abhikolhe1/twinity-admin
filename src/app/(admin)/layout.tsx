@@ -19,6 +19,7 @@ const ROUTE_PERMISSIONS: { prefix: string; permission: string }[] = [
   { prefix: '/templates',          permission: 'templates.view' },
   { prefix: '/manager/dashboard',  permission: 'manager.dashboard.view' },
   { prefix: '/manager/requests',   permission: 'manager.dashboard.view' },
+  { prefix: '/manager/celebrities', permission: 'manager.dashboard.view' },
   { prefix: '/team',               permission: 'team.view' },
   { prefix: '/roles',              permission: 'roles.view' },
   { prefix: '/settings',           permission: 'settings.view' },

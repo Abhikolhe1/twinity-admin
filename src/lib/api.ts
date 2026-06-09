@@ -292,25 +292,62 @@ export type ManagerDirectoryEntry = {
   agency_name?: string | null
 }
 
+export type CelebrityMasters = {
+  languages: string[]
+  nationalities: string[]
+}
+
+function resolveUserFriendlyMessage(status: number, message?: string): string {
+  const normalized = String(message || '').trim()
+  const lower = normalized.toLowerCase()
+
+  if (status === 413 || lower.includes('entity too large') || lower.includes('payload too large')) {
+    return 'The uploaded files are too large. Please reduce the file size or upload fewer files at once.'
+  }
+  if (status === 401) return normalized || 'Your session has expired. Please sign in again.'
+  if (status === 403) return normalized || 'You do not have access to perform this action.'
+  if (status === 404) return normalized || 'The requested record could not be found.'
+  if (status === 409) return normalized || 'This record already exists or is already linked elsewhere.'
+  if (status === 429) return 'Too many attempts. Please wait a moment and try again.'
+
+  if (lower.includes('internal server error')) {
+    return 'Something went wrong on our side. Please try again in a moment.'
+  }
+  if (lower.includes('fetch failed') || lower.includes('network') || lower.includes('timeout')) {
+    return 'We could not reach the server right now. Please check the connection and try again.'
+  }
+
+  if (status >= 500) {
+    return 'Something went wrong on our side. Please try again in a moment.'
+  }
+
+  return normalized || 'Something went wrong. Please try again.'
+}
+
 async function req<T>(path: string, options?: RequestInit): Promise<T> {
   const mode = getPortalMode()
   const token = getAdminToken(mode)
-  const res = await fetch(`${BASE}${path}`, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(options?.headers || {}),
-    },
-  })
+  let res: Response
+  try {
+    res = await fetch(`${BASE}${path}`, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(options?.headers || {}),
+      },
+    })
+  } catch {
+    throw new Error('We could not reach the server right now. Please check the connection and try again.')
+  }
   if (res.status === 401 && getAdminToken(mode)) {
     clearAdminToken(mode)
     if (typeof window !== 'undefined')
     throw new Error('Session expired')
   }
   const data = await res.json().catch(() => ({})) as any
-  if (res.status === 429) throw new Error(data.message || 'Too many attempts. Please wait a moment and try again.')
-  if (!res.ok) throw new Error(data.message || 'Request failed')
+  if (res.status === 429) throw new Error(resolveUserFriendlyMessage(res.status, data.message))
+  if (!res.ok) throw new Error(resolveUserFriendlyMessage(res.status, data.message))
   return data
 }
 
@@ -354,8 +391,8 @@ export const adminApi = {
       body: formData,
     }).then(async res => {
       if (res.status === 401) { clearAdminToken(mode); throw new Error('Session expired') }
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.message || 'Request failed')
+      const data = await res.json().catch(() => ({})) as any
+      if (!res.ok) throw new Error(resolveUserFriendlyMessage(res.status, data.message))
       return data
     })
   },
@@ -399,6 +436,9 @@ export const adminApi = {
 
   getSettings:    () => req('/admin/settings'),
   saveSettings:   (body: object) => req('/admin/settings', { method: 'PUT', body: JSON.stringify(body) }),
+  getCelebrityMasters: () => req<{ success: boolean; data: CelebrityMasters }>('/admin/settings/celebrity-masters'),
+  getCelebrityOnboardingMasters: () => req<{ success: boolean; data: CelebrityMasters }>('/celebrity-onboarding/masters'),
+  saveCelebrityMasters: (body: CelebrityMasters) => req<{ success: boolean; data: CelebrityMasters }>('/admin/settings/celebrity-masters', { method: 'PUT', body: JSON.stringify(body) }),
   uploadWatermarkImage: (formData: FormData) => {
     const mode = getPortalMode()
     const token = getAdminToken(mode)
@@ -408,8 +448,8 @@ export const adminApi = {
       body: formData,
     }).then(async res => {
       if (res.status === 401) { clearAdminToken(mode); throw new Error('Session expired') }
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.message || 'Request failed')
+      const data = await res.json().catch(() => ({})) as any
+      if (!res.ok) throw new Error(resolveUserFriendlyMessage(res.status, data.message))
       return data
     })
   },
@@ -436,6 +476,11 @@ export const adminApi = {
   managerDashboardTemplates: (mode: PortalMode = getPortalMode()) => req<{ success: boolean; data: ManagerDashboardCelebrityTemplates[]; templates: ManagerDashboardTemplate[] }>(`${getDashboardPrefix(mode)}/templates`),
   updateManagerDashboardTemplates: (celebrityId: string, templateIds: string[], mode: PortalMode = getPortalMode()) => req(`${getDashboardPrefix(mode)}/templates/${celebrityId}`, { method: 'PATCH', body: JSON.stringify({ templateIds }) }),
   managerDashboardAuditLogs: (params = '', mode: PortalMode = getPortalMode()) => req<{ success: boolean; logs: any[]; total: number; page: number; pages: number }>(`${getDashboardPrefix(mode)}/audit-logs${params ? `?${params}` : ''}`),
+  createManagerCelebrityDraft: (body: object, mode: PortalMode = getPortalMode()) => req<{ success: boolean; data: { id: string; name: string }; message: string }>(`${getDashboardPrefix(mode)}/celebrities`, { method: 'POST', body: JSON.stringify(body) }),
+  getManagerCelebrityProfile: (celebrityId: string, mode: PortalMode = getPortalMode()) => req<{ success: boolean; data: Record<string, unknown>; templates: CelebrityPortalTemplate[] }>(`${getDashboardPrefix(mode)}/celebrities/${celebrityId}/profile`),
+  saveManagerCelebrityProfile: (celebrityId: string, body: object, mode: PortalMode = getPortalMode()) => req<{ success: boolean; data: Record<string, unknown>; profileReady: boolean }>(`${getDashboardPrefix(mode)}/celebrities/${celebrityId}/profile`, { method: 'PUT', body: JSON.stringify(body) }),
+  submitManagerCelebrityProfile: (celebrityId: string, mode: PortalMode = getPortalMode()) => req<{ success: boolean; message: string }>(`${getDashboardPrefix(mode)}/celebrities/${celebrityId}/profile/submit`, { method: 'POST' }),
+  activateManagerCelebrityProfile: (celebrityId: string, mode: PortalMode = getPortalMode()) => req<{ success: boolean; data: Record<string, unknown>; message: string }>(`${getDashboardPrefix(mode)}/celebrities/${celebrityId}/profile/activate`, { method: 'POST' }),
 
   templates:      (params = '') => req(`/templates/admin?${params}`),
   createTemplate: (body: object) => req('/templates', { method: 'POST', body: JSON.stringify(body) }),

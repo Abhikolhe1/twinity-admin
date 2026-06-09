@@ -484,7 +484,7 @@ function CelebDrawer({
 
           {/* Pricing */}
           <section>
-            <p className="text-[11px] font-bold uppercase tracking-wider text-content-muted mb-3">Pricing (USD)</p>
+            <p className="text-[11px] font-bold uppercase tracking-wider text-content-muted mb-3">Pricing (SAR)</p>
             <div className="flex flex-col gap-3">
               {[
                 { label: 'Personal Greetings', minKey: 'priceGreetingMin', maxKey: 'priceGreetingMax' },
@@ -493,24 +493,34 @@ function CelebDrawer({
                 <div key={row.label} className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
                   <div>
                     <p className="text-xs text-content-muted mb-1">{row.label} — Min</p>
-                    <input
-                      type="number" min="0"
-                      value={form[row.minKey as keyof FormState] as string}
-                      onChange={e => set(row.minKey as keyof FormState, e.target.value)}
-                      className={inputCls}
-                      placeholder="0"
-                    />
+                    <div className="relative">
+                      <input
+                        type="number" min="0"
+                        value={form[row.minKey as keyof FormState] as string}
+                        onChange={e => set(row.minKey as keyof FormState, e.target.value)}
+                        className={`${inputCls} pr-14`}
+                        placeholder="0"
+                      />
+                      <span className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-[11px] font-semibold uppercase tracking-[0.12em] text-content-muted">
+                        SAR
+                      </span>
+                    </div>
                   </div>
                   <span className="text-content-muted text-sm mt-4">—</span>
                   <div>
                     <p className="text-xs text-content-muted mb-1">Max</p>
-                    <input
-                      type="number" min="0"
-                      value={form[row.maxKey as keyof FormState] as string}
-                      onChange={e => set(row.maxKey as keyof FormState, e.target.value)}
-                      className={inputCls}
-                      placeholder="0"
-                    />
+                    <div className="relative">
+                      <input
+                        type="number" min="0"
+                        value={form[row.maxKey as keyof FormState] as string}
+                        onChange={e => set(row.maxKey as keyof FormState, e.target.value)}
+                        className={`${inputCls} pr-14`}
+                        placeholder="0"
+                      />
+                      <span className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-[11px] font-semibold uppercase tracking-[0.12em] text-content-muted">
+                        SAR
+                      </span>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -995,7 +1005,7 @@ export default function CelebritiesPage() {
                   <span className="font-bold text-content-primary">{celeb.total_orders}</span> orders
                 </div>
                 <div className="text-xs text-content-muted">
-                  from <span className="font-bold text-brand-purple">${(celeb.price_range?.greeting?.min || 0).toLocaleString()}</span>
+                  from <span className="font-bold text-brand-purple">SAR {(celeb.price_range?.greeting?.min || 0).toLocaleString()}</span>
                 </div>
               </div>
 

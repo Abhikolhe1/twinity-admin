@@ -18,6 +18,10 @@ const STATUSES = ['pending', 'in-progress', 'review', 'delivered', 'failed', 'ca
 const toUiStatus = (status?: string) => status === 'in_progress' ? 'in-progress' : status || 'pending'
 
 function getCreatorApprovalInfo(job: any): { approved: boolean; label: string } {
+  if (toUiStatus(job?.status) === 'delivered') {
+    return { approved: true, label: 'Delivered' }
+  }
+
   const history = Array.isArray(job?.status_history) ? job.status_history : []
   const note = history
     .map((entry: any) => String(entry?.note || ''))
@@ -79,9 +83,10 @@ function ReviewModal({
 
   const assetUrl  = job.watermarked_url || job.preview_url || job.final_video_url || ''
   const isImageAd = job.product_type === 'image_ad' || job.product_type === 'image-ad'
+  const isDelivered = toUiStatus(job.status) === 'delivered'
   const creatorApproval = getCreatorApprovalInfo(job)
-  const clientApproved = Boolean(job.client_preview_approved_at)
-  const canDeliver = creatorApproval.approved && clientApproved
+  const clientApproved = isDelivered || Boolean(job.client_preview_approved_at)
+  const canDeliver = !isDelivered && creatorApproval.approved && clientApproved
 
   return (
     <>
@@ -208,12 +213,12 @@ function ReviewModal({
               <div className="rounded-xl border border-brand-purple/10 bg-surface-subtle px-4 py-3">
                 <p className="text-[10px] font-bold uppercase tracking-wider text-content-muted mb-1">Client Preview Approval</p>
                 <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${clientApproved ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-                  {clientApproved ? 'Client approved' : 'Waiting for client approval'}
+                  {isDelivered ? 'Delivered' : clientApproved ? 'Client approved' : 'Waiting for client approval'}
                 </span>
               </div>
             </div>
 
-            {!canDeliver && (
+            {!canDeliver && !isDelivered && (
               <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
                 Superadmin can deliver this service only after both approvals are completed: celebrity or assigned manager approval, and client preview approval.
               </div>
@@ -257,7 +262,7 @@ function ReviewModal({
           </div>
 
           {/* Footer */}
-          {!rejecting && (
+          {!rejecting && !isDelivered && (
             <div className="px-6 py-4 border-t border-brand-purple/10 flex gap-3 shrink-0 bg-white">
               <button
                 onClick={() => setRejecting(true)}
@@ -447,16 +452,19 @@ export default function VideosPage() {
   function onApproved(id: string) {
     setJobs(prev => prev.map(j => j.id === id ? { ...j, status: 'delivered', download_enabled: true } : j))
     setReviewJob(null)
+    fetchJobs()
   }
 
   function onRejected(id: string) {
     setJobs(prev => prev.map(j => j.id === id ? { ...j, status: 'failed' } : j))
     setReviewJob(null)
+    fetchJobs()
   }
 
   function onPreviewSet(id: string) {
     setJobs(prev => prev.map(j => j.id === id ? { ...j, status: 'review' } : j))
     setSetPreviewJob(null)
+    fetchJobs()
   }
 
   const colCount = canManage ? 9 : 6

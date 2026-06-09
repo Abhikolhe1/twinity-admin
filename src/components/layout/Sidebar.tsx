@@ -25,9 +25,10 @@ const NAV = [
 const ADMIN_NAV = [
   { href: '/manager/dashboard',   label: 'Manager Desk',       icon: LayoutDashboard, permission: 'manager.dashboard.view' },
   { href: '/manager/requests',    label: 'All Requests',       icon: ClipboardList,   permission: 'manager.dashboard.view' },
+  { href: '/manager/celebrities',     label: 'Add Celebrity', icon: Star,            permission: 'manager.dashboard.view' },
   { href: '/team',                label: 'Team',               icon: Users2,      permission: 'team.view' },
   { href: '/roles',               label: 'Roles',              icon: ShieldCheck, permission: 'roles.view' },
-  { href: '/celebrity-managers',  label: 'Celeb. Managers',   icon: Link2,       permission: 'celebrity_managers.view' },
+  { href: '/celebrity-managers',  label: 'Managers',          icon: Link2,       permission: 'celebrity_managers.view' },
   { href: '/audit-logs',          label: 'Audit Logs',         icon: ScrollText,  permission: 'audit_logs.view' },
   { href: '/blocked-words',       label: 'Blocked Words',      icon: ShieldAlert, permission: 'settings.manage' },
   { href: '/settings',            label: 'Settings',           icon: Settings,    permission: 'settings.view' },

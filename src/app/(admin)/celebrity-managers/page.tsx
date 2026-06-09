@@ -1,7 +1,7 @@
 'use client'
 import { Fragment, useEffect, useRef, useState, useCallback } from 'react'
 import { createPortal } from 'react-dom'
-import { Search, Link2, Link2Off, Plus, X, Shield, ChevronDown, Check, Eye, Pencil } from 'lucide-react'
+import { Search, Link2, Link2Off, Plus, X, Shield, ChevronDown, Check, Eye, Pencil, MoreHorizontal } from 'lucide-react'
 import { adminApi } from '@/lib/api'
 import Spinner, { PageLoader } from '@/components/ui/Spinner'
 import { useDebounce } from '@/lib/hooks'
@@ -400,7 +400,22 @@ function LinkRow({ link, onUpdated, canManage }: { link: ManagerLink; onUpdated:
   const [saving, setSaving] = useState(false)
   const [confirmRemoveOpen, setConfirmRemoveOpen] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
+  const [actionsOpen, setActionsOpen] = useState(false)
   const canPortal = typeof document !== 'undefined'
+
+  useEffect(() => {
+    function handleOutsideClick() {
+      setActionsOpen(false)
+    }
+
+    if (actionsOpen) {
+      document.addEventListener('click', handleOutsideClick)
+    }
+
+    return () => {
+      document.removeEventListener('click', handleOutsideClick)
+    }
+  }, [actionsOpen])
 
   async function handleRemove() {
     setSaving(true)
@@ -437,31 +452,65 @@ function LinkRow({ link, onUpdated, canManage }: { link: ManagerLink; onUpdated:
         </td>
         <td className="px-4 py-3 text-center">
           {canManage ? (
-            <div className="mx-auto flex w-fit flex-wrap items-center justify-center gap-2">
-              <button onClick={() => setShowEdit(true)} className="inline-flex items-center gap-1.5 rounded-lg border border-brand-purple/20 px-3 py-1.5 text-xs font-semibold text-content-secondary transition-colors hover:border-brand-purple/40 hover:text-brand-purple">
-                <Pencil className="w-3.5 h-3.5" />
-                Edit
-              </button>
+            <div className="relative mx-auto w-fit">
               <button
-                onClick={async () => {
-                  setSaving(true)
-                  try {
-                    await adminApi.updateCelebrityManager(link.celebrity_id, link.id, { is_active: !link.is_active, permissions: link.permissions })
-                    onUpdated()
-                  } finally {
-                    setSaving(false)
-                  }
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  setActionsOpen((current) => !current)
                 }}
-                disabled={saving}
-                className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all ${link.is_active ? 'bg-amber-50 text-amber-700 hover:bg-amber-100' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'}`}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-brand-purple/20 text-content-secondary transition-colors hover:border-brand-purple/40 hover:text-brand-purple hover:bg-brand-purple/5"
+                aria-label="Open link actions"
               >
-                {saving ? <Spinner size="sm" /> : link.is_active ? <Link2Off className="w-3.5 h-3.5" /> : <Link2 className="w-3.5 h-3.5" />}
-                {link.is_active ? 'Deactivate' : 'Reactivate'}
+                {saving ? <Spinner size="sm" className="text-brand-purple" /> : <MoreHorizontal className="h-4 w-4" />}
               </button>
-              <button onClick={() => setConfirmRemoveOpen(true)} disabled={saving} className="inline-flex items-center gap-1.5 rounded-lg bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-600 transition-colors hover:bg-red-100">
-                <X className="w-3.5 h-3.5" />
-                Remove
-              </button>
+
+              {actionsOpen && !saving && (
+                <div
+                  className="absolute right-0 top-11 z-20 min-w-[170px] overflow-hidden rounded-xl border border-brand-purple/10 bg-white shadow-lg"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowEdit(true)
+                      setActionsOpen(false)
+                    }}
+                    className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm font-medium text-content-primary transition-colors hover:bg-surface-subtle"
+                  >
+                    <Pencil className="h-4 w-4 text-brand-purple" />
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      setActionsOpen(false)
+                      setSaving(true)
+                      try {
+                        await adminApi.updateCelebrityManager(link.celebrity_id, link.id, { is_active: !link.is_active, permissions: link.permissions })
+                        onUpdated()
+                      } finally {
+                        setSaving(false)
+                      }
+                    }}
+                    className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm font-medium text-content-primary transition-colors hover:bg-surface-subtle"
+                  >
+                    {link.is_active ? <Link2Off className="h-4 w-4 text-amber-600" /> : <Link2 className="h-4 w-4 text-emerald-600" />}
+                    {link.is_active ? 'Deactivate' : 'Reactivate'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setConfirmRemoveOpen(true)
+                      setActionsOpen(false)
+                    }}
+                    className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
+                  >
+                    <X className="h-4 w-4" />
+                    Remove
+                  </button>
+                </div>
+              )}
             </div>
           ) : (
             <span className="text-xs text-content-muted">No actions</span>
@@ -504,6 +553,7 @@ export default function CelebrityManagersPage() {
   const [addCelebId, setAddCelebId] = useState<string | undefined>(undefined)
   const [addManagerId, setAddManagerId] = useState<string | undefined>(undefined)
   const [expandedManagerId, setExpandedManagerId] = useState<string | null>(null)
+  const [activeActionMenuId, setActiveActionMenuId] = useState<string | null>(null)
 
   const permissions = usePermissions()
   const canManage = permissions.includes('celebrity_managers.manage')
@@ -528,6 +578,20 @@ export default function CelebrityManagersPage() {
   }, [])
 
   useEffect(() => { fetchManagers() }, [fetchManagers])
+
+  useEffect(() => {
+    function handleOutsideClick() {
+      setActiveActionMenuId(null)
+    }
+
+    if (activeActionMenuId) {
+      document.addEventListener('click', handleOutsideClick)
+    }
+
+    return () => {
+      document.removeEventListener('click', handleOutsideClick)
+    }
+  }, [activeActionMenuId])
 
   const filteredManagers = managers.filter((manager) => {
     const term = debouncedSearch.trim().toLowerCase()
@@ -594,7 +658,7 @@ export default function CelebrityManagersPage() {
       )}
 
       {!loading && filteredManagers.length > 0 && (
-        <div className="overflow-hidden rounded-2xl border border-brand-purple/12 bg-white shadow-card">
+        <div className="overflow-visible rounded-2xl border border-brand-purple/12 bg-white shadow-card">
           <table className="w-full">
             <thead>
               <tr className="border-b border-brand-purple/8">
@@ -632,21 +696,52 @@ export default function CelebrityManagersPage() {
                       </td>
                       <td className="px-5 py-4 text-sm text-content-secondary">{manager.agency_name || '—'}</td>
                       <td className="px-5 py-4 text-center">
-                        <div className="mx-auto flex w-fit flex-wrap items-center justify-center gap-2">
-                          {canManage && (
-                            <button
-                              onClick={() => { setAddManagerId(manager.id); setAddCelebId(undefined); setShowAdd(true) }}
-                              className="rounded-lg bg-brand-purple px-3 py-1.5 text-xs font-semibold text-white transition-all hover:opacity-90"
-                            >
-                              Add Celebrity
-                            </button>
-                          )}
+                        <div className="relative mx-auto w-fit">
                           <button
-                            onClick={() => setExpandedManagerId(expanded ? null : manager.id)}
-                            className="rounded-lg border border-brand-purple/20 px-3 py-1.5 text-xs font-semibold text-content-secondary transition-colors hover:border-brand-purple/40 hover:text-brand-purple"
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              setActiveActionMenuId((current) => current === manager.id ? null : manager.id)
+                            }}
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-brand-purple/20 text-content-secondary transition-colors hover:border-brand-purple/40 hover:text-brand-purple hover:bg-brand-purple/5"
+                            aria-label="Open manager actions"
                           >
-                            {expanded ? 'Close' : `View (${linkedCount})`}
+                            <MoreHorizontal className="h-4 w-4" />
                           </button>
+
+                          {activeActionMenuId === manager.id && (
+                            <div
+                              className="absolute bottom-11 right-0 z-30 min-w-[170px] overflow-hidden rounded-xl border border-brand-purple/10 bg-white shadow-lg"
+                              onClick={(event) => event.stopPropagation()}
+                            >
+                              {canManage && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setAddManagerId(manager.id)
+                                    setAddCelebId(undefined)
+                                    setShowAdd(true)
+                                    setActiveActionMenuId(null)
+                                  }}
+                                  className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm font-medium text-content-primary transition-colors hover:bg-surface-subtle"
+                                >
+                                  <Plus className="h-4 w-4 text-brand-purple" />
+                                  Add Celebrity
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setExpandedManagerId(expanded ? null : manager.id)
+                                  setActiveActionMenuId(null)
+                                }}
+                                className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm font-medium text-content-primary transition-colors hover:bg-surface-subtle"
+                              >
+                                <Eye className="h-4 w-4 text-brand-purple" />
+                                {expanded ? 'Close' : `Open (${linkedCount})`}
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -656,7 +751,7 @@ export default function CelebrityManagersPage() {
                           {(manager.celebrity_links || []).length === 0 ? (
                             <p className="text-sm text-content-muted">This manager has no celebrity links yet.</p>
                           ) : (
-                            <div className="overflow-hidden rounded-2xl border border-brand-purple/10 bg-white">
+                            <div className="overflow-visible rounded-2xl border border-brand-purple/10 bg-white">
                               <table className="w-full">
                                 <thead>
                                   <tr className="border-b border-brand-purple/8 bg-surface-subtle/40">
