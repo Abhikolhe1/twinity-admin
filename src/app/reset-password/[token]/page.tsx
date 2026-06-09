@@ -4,11 +4,12 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { Lock, Eye, EyeOff, Shield, CheckCircle } from 'lucide-react'
-import { adminApi } from '@/lib/api'
+import { adminApi, getPortalMode } from '@/lib/api'
 
 export default function ResetPasswordPage() {
   const { token } = useParams<{ token: string }>()
   const router = useRouter()
+  const mode = getPortalMode()
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
   const [showPw, setShowPw] = useState(false)
@@ -30,7 +31,7 @@ export default function ResetPasswordPage() {
     setLoading(true)
     setError('')
     try {
-      await adminApi.resetPassword(token, { password })
+      await adminApi.resetPassword(token, { password }, mode)
       setDone(true)
       setTimeout(() => router.replace('/login'), 3000)
     } catch (err: any) {
@@ -65,10 +66,10 @@ export default function ResetPasswordPage() {
         ) : (
           <>
             <div className="mb-8">
-              <p className="text-xs font-bold text-brand-purple uppercase tracking-widest mb-2">Admin panel</p>
+              <p className="text-xs font-bold text-brand-purple uppercase tracking-widest mb-2">Twinity Portal</p>
               <h2 className="text-2xl font-bold text-content-primary">Set new password</h2>
               <p className="text-sm text-content-muted mt-1.5">
-                Choose a strong password for your admin account.
+                Choose a strong password for your portal account to regain access.
               </p>
             </div>
 

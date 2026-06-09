@@ -1,10 +1,11 @@
 'use client'
 import { useEffect, useRef, useState, useCallback } from 'react'
-import Link from 'next/link'
-import { Plus, Search, ToggleLeft, ToggleRight, Edit2, Trash2, X, Loader2, ChevronDown, AlertCircle, FileText, Upload, ScanFace } from 'lucide-react'
+import { Plus, Search, ToggleLeft, ToggleRight, Edit2, Trash2, X, Loader2, ChevronDown, AlertCircle, FileText } from 'lucide-react'
 import { adminApi } from '@/lib/api'
-import Spinner from '@/components/ui/Spinner'
+import Spinner, { PageLoader } from '@/components/ui/Spinner'
 import { usePermissions } from '@/lib/permissions-context'
+
+// ── Types ────────────────────────────────────────────────────────────────────
 
 interface Template {
   id: string
@@ -16,9 +17,6 @@ interface Template {
   purpose_ar: string
   sample_script: string
   sample_script_ar: string
-  background_image_url?: string | null
-  creatify_prompt?: string | null
-  video_generation_prompt?: string | null
   product_types: string[]
   duration: string
   is_active: boolean
@@ -34,16 +32,15 @@ type FormState = {
   purposeAr: string
   sampleScript: string
   sampleScriptAr: string
-  backgroundImageUrl: string
-  creatifyPrompt: string
-  videoGenerationPrompt: string
   productTypes: string[]
   duration: string
   isActive: boolean
 }
 
+// ── Constants ────────────────────────────────────────────────────────────────
+
 const PRODUCT_TYPES = [
-  { value: 'greeting', label: 'Personal Greetings' },
+  { value: 'greeting',      label: 'Personal Greetings' },
   { value: 'video-ad', label: 'Video Ad' },
 ]
 
@@ -64,9 +61,6 @@ const EMPTY_FORM: FormState = {
   purposeAr: '',
   sampleScript: '',
   sampleScriptAr: '',
-  backgroundImageUrl: '',
-  creatifyPrompt: '',
-  videoGenerationPrompt: '',
   productTypes: [],
   duration: '30s',
   isActive: true,
@@ -74,25 +68,24 @@ const EMPTY_FORM: FormState = {
 
 function templateToForm(t: Template): FormState {
   return {
-    name: t.name,
-    nameAr: t.name_ar,
-    description: t.description,
-    descriptionAr: t.description_ar,
-    purpose: t.purpose,
-    purposeAr: t.purpose_ar,
-    sampleScript: t.sample_script,
+    name:           t.name,
+    nameAr:         t.name_ar,
+    description:    t.description,
+    descriptionAr:  t.description_ar,
+    purpose:        t.purpose,
+    purposeAr:      t.purpose_ar,
+    sampleScript:   t.sample_script,
     sampleScriptAr: t.sample_script_ar,
-    backgroundImageUrl: t.background_image_url ?? '',
-    creatifyPrompt: t.creatify_prompt ?? '',
-    videoGenerationPrompt: t.video_generation_prompt ?? '',
-    productTypes: t.product_types ?? [],
-    duration: t.duration ?? '30s',
-    isActive: t.is_active,
+    productTypes:   t.product_types ?? [],
+    duration:       t.duration ?? '30s',
+    isActive:       t.is_active,
   }
 }
 
 const fmt = (d: string) =>
-  d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'
+  d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
+
+// ── Field component ──────────────────────────────────────────────────────────
 
 function Field({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
   return (
@@ -107,6 +100,8 @@ function Field({ label, children, hint }: { label: string; children: React.React
 const inputCls = 'w-full px-3 py-2 rounded-xl border border-brand-purple/20 text-sm text-content-primary placeholder:text-content-muted focus:outline-none focus:border-brand-purple bg-white transition-colors'
 const textareaCls = `${inputCls} resize-none`
 
+// ── Drawer ───────────────────────────────────────────────────────────────────
+
 function TemplateDrawer({
   target,
   onClose,
@@ -120,15 +115,6 @@ function TemplateDrawer({
   const [form, setForm] = useState<FormState>(target ? templateToForm(target) : EMPTY_FORM)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
-  const [pendingImageFile, setPendingImageFile] = useState<File | null>(null)
-  const [localPreviewUrl, setLocalPreviewUrl] = useState('')
-  const imageInputRef = useRef<HTMLInputElement>(null)
-
-  useEffect(() => {
-    return () => {
-      if (localPreviewUrl) URL.revokeObjectURL(localPreviewUrl)
-    }
-  }, [localPreviewUrl])
 
   const set = (k: keyof FormState, v: unknown) =>
     setForm(prev => ({ ...prev, [k]: v }))
@@ -142,58 +128,20 @@ function TemplateDrawer({
     }))
   }
 
-  function handleImageFile(file: File) {
-    if (localPreviewUrl) URL.revokeObjectURL(localPreviewUrl)
-    setPendingImageFile(file)
-    setLocalPreviewUrl(URL.createObjectURL(file))
-    if (imageInputRef.current) imageInputRef.current.value = ''
-  }
-
-  const displayImageUrl = localPreviewUrl || form.backgroundImageUrl
-  const hasGreeting = form.productTypes.includes('greeting')
-  const hasVideoAd = form.productTypes.includes('video-ad')
-
   async function submit(e: React.FormEvent) {
     e.preventDefault()
-    if (!form.name.trim()) { setError('Name (English) is required'); return }
-    if (!form.nameAr.trim()) { setError('Name (Arabic) is required'); return }
-    if (!form.purpose.trim()) { setError('Purpose (English) is required'); return }
+    if (!form.name.trim())        { setError('Name (English) is required'); return }
+    if (!form.nameAr.trim())      { setError('Name (Arabic) is required'); return }
+    if (!form.purpose.trim())     { setError('Purpose (English) is required'); return }
+    if (!form.sampleScript.trim()) { setError('Sample script is required'); return }
     if (form.productTypes.length === 0) { setError('Select at least one product type'); return }
-    if (hasGreeting && !form.sampleScript.trim()) { setError('Sample script is required for greeting templates'); return }
-    if (hasVideoAd && !form.videoGenerationPrompt.trim()) { setError('Video generation prompt is required for video ad templates'); return }
 
     setError('')
     setSaving(true)
     try {
-      let resolvedImageUrl = form.backgroundImageUrl
-
-      if (pendingImageFile) {
-        const fd = new FormData()
-        fd.append('image', pendingImageFile)
-        const uploadRes = await adminApi.uploadTemplateImage(fd)
-        resolvedImageUrl = uploadRes.url
-      }
-
-      const payload = {
-        name: form.name,
-        nameAr: form.nameAr,
-        description: form.description,
-        descriptionAr: form.descriptionAr,
-        purpose: form.purpose,
-        purposeAr: form.purposeAr,
-        sampleScript: form.sampleScript,
-        sampleScriptAr: form.sampleScriptAr,
-        backgroundImageUrl: resolvedImageUrl || undefined,
-        creatifyPrompt: form.creatifyPrompt || undefined,
-        videoGenerationPrompt: form.videoGenerationPrompt || undefined,
-        productTypes: form.productTypes,
-        duration: form.duration,
-        isActive: form.isActive,
-      }
-
       const res: any = isEdit
-        ? await adminApi.updateTemplate(target!.id, payload)
-        : await adminApi.createTemplate(payload)
+        ? await adminApi.updateTemplate(target!.id, form)
+        : await adminApi.createTemplate(form)
       onSaved(res.data)
     } catch (err: any) {
       setError(err.message || 'Save failed')
@@ -205,6 +153,8 @@ function TemplateDrawer({
     <>
       <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-40" onClick={onClose} />
       <div className="fixed right-0 top-0 h-full w-full max-w-xl bg-white z-50 flex flex-col shadow-2xl">
+
+        {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-brand-purple/10 shrink-0">
           <div>
             <h2 className="text-base font-bold text-content-primary">
@@ -219,7 +169,10 @@ function TemplateDrawer({
           </button>
         </div>
 
+        {/* Body */}
         <form onSubmit={submit} className="flex-1 overflow-y-auto px-6 py-5 flex flex-col gap-5">
+
+          {/* Names */}
           <div className="grid grid-cols-2 gap-4">
             <Field label="Name (English) *">
               <input className={inputCls} value={form.name} onChange={e => set('name', e.target.value)} placeholder="e.g. Birthday Wish" />
@@ -229,6 +182,7 @@ function TemplateDrawer({
             </Field>
           </div>
 
+          {/* Descriptions */}
           <div className="grid grid-cols-2 gap-4">
             <Field label="Description (English)">
               <textarea className={textareaCls} rows={2} value={form.description} onChange={e => set('description', e.target.value)} placeholder="Short description" />
@@ -238,59 +192,7 @@ function TemplateDrawer({
             </Field>
           </div>
 
-          <Field label="Background Image" hint="Used for studio cards and celebrity composite generation.">
-            <input
-              ref={imageInputRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={e => { if (e.target.files?.[0]) handleImageFile(e.target.files[0]) }}
-            />
-
-            {displayImageUrl ? (
-              <div className="relative rounded-xl overflow-hidden border border-brand-purple/20 bg-surface-subtle" style={{ aspectRatio: '16/9' }}>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={displayImageUrl} alt="" className="w-full h-full object-cover" />
-                {pendingImageFile && (
-                  <span className="absolute top-2 left-2 rounded bg-amber-500/90 px-2 py-0.5 text-[10px] font-semibold text-white">
-                    Pending upload
-                  </span>
-                )}
-                <div className="absolute top-2 right-2 flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => imageInputRef.current?.click()}
-                    className="h-8 px-3 rounded-lg bg-black/60 text-white text-xs font-semibold hover:bg-black/80 transition-all"
-                  >
-                    Change
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (localPreviewUrl) URL.revokeObjectURL(localPreviewUrl)
-                      setLocalPreviewUrl('')
-                      setPendingImageFile(null)
-                      set('backgroundImageUrl', '')
-                    }}
-                    className="w-8 h-8 rounded-full bg-black/60 flex items-center justify-center text-white hover:bg-black/80 transition-all"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => imageInputRef.current?.click()}
-                className="w-full rounded-xl border-2 border-dashed border-brand-purple/20 flex flex-col items-center justify-center gap-2 py-8 hover:border-brand-purple/40 hover:bg-surface-subtle/50 transition-all"
-              >
-                <Upload className="w-6 h-6 text-content-muted opacity-60" />
-                <span className="text-xs font-medium text-content-secondary">Upload background image</span>
-                <span className="text-[11px] text-content-muted">PNG, JPG, WebP</span>
-              </button>
-            )}
-          </Field>
-
+          {/* Purpose */}
           <div className="grid grid-cols-2 gap-4">
             <Field label="Purpose (English) *">
               <div className="relative">
@@ -316,6 +218,7 @@ function TemplateDrawer({
             </Field>
           </div>
 
+          {/* Product Types + Duration */}
           <div className="grid grid-cols-2 gap-4">
             <Field label="Product Types *" hint="Select all that apply">
               <div className="flex flex-col gap-1.5 mt-1">
@@ -346,7 +249,8 @@ function TemplateDrawer({
             </Field>
           </div>
 
-          <Field label="Sample Script (English)" hint="Used for greeting templates and customer prefill.">
+          {/* Sample Scripts */}
+          <Field label="Sample Script (English) *" hint="This pre-fills the script field in the customer wizard">
             <textarea
               className={textareaCls}
               rows={5}
@@ -355,10 +259,9 @@ function TemplateDrawer({
               placeholder="Hey [Name]! Happy Birthday! Wishing you an amazing day full of joy..."
             />
           </Field>
-
           <Field label="Sample Script (Arabic)">
             <textarea
-              className={textareaCls}
+              className={`${textareaCls}`}
               dir="rtl"
               rows={5}
               value={form.sampleScriptAr}
@@ -367,30 +270,7 @@ function TemplateDrawer({
             />
           </Field>
 
-          {(hasGreeting || form.creatifyPrompt) && (
-            <Field label="Creatify Aurora Prompt" hint="Optional guidance for Creatify when generating greeting visuals.">
-              <textarea
-                className={textareaCls}
-                rows={3}
-                value={form.creatifyPrompt}
-                onChange={e => set('creatifyPrompt', e.target.value)}
-                placeholder="Celebratory scene with warm lighting and premium framing..."
-              />
-            </Field>
-          )}
-
-          {(hasVideoAd || form.videoGenerationPrompt) && (
-            <Field label="Video Generation Prompt" hint="Required for video ad templates.">
-              <textarea
-                className={textareaCls}
-                rows={4}
-                value={form.videoGenerationPrompt}
-                onChange={e => set('videoGenerationPrompt', e.target.value)}
-                placeholder="Dynamic product ad with cinematic transitions and bold text overlays..."
-              />
-            </Field>
-          )}
-
+          {/* Status */}
           <Field label="Status">
             <label className="flex items-center gap-2.5 cursor-pointer select-none mt-0.5">
               <div
@@ -410,6 +290,7 @@ function TemplateDrawer({
           )}
         </form>
 
+        {/* Footer */}
         <div className="px-6 py-4 border-t border-brand-purple/10 flex gap-3 shrink-0 bg-white">
           <button
             type="button"
@@ -434,6 +315,8 @@ function TemplateDrawer({
     </>
   )
 }
+
+// ── Delete confirm modal ─────────────────────────────────────────────────────
 
 function DeleteModal({
   name,
@@ -481,13 +364,15 @@ function DeleteModal({
   )
 }
 
+// ── Main Page ─────────────────────────────────────────────────────────────────
+
 const PRODUCT_TYPE_LABELS: Record<string, string> = {
-  greeting: 'Personal Greetings',
+  'greeting':      'Personal Greetings',
   'video-ad': 'Video Ad',
 }
 
 const PRODUCT_TYPE_COLORS: Record<string, string> = {
-  greeting: 'bg-blue-50 text-blue-700',
+  'greeting':      'bg-blue-50 text-blue-700',
   'video-ad': 'bg-purple-50 text-purple-700',
 }
 
@@ -566,6 +451,7 @@ export default function TemplatesPage() {
 
   return (
     <div className="p-8">
+      {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-content-primary">Prompt Templates</h1>
@@ -584,6 +470,7 @@ export default function TemplatesPage() {
         )}
       </div>
 
+      {/* Filters */}
       <div className="flex flex-wrap gap-3 mb-5">
         <div className="relative">
           <Search className="w-4 h-4 text-content-muted absolute left-3 top-1/2 -translate-y-1/2" />
@@ -621,6 +508,7 @@ export default function TemplatesPage() {
         </div>
       </div>
 
+      {/* Table */}
       <div className="bg-white rounded-2xl border border-brand-purple/12 shadow-card overflow-hidden">
         {loading ? (
           <div className="py-20 flex justify-center"><Spinner /></div>
@@ -654,17 +542,21 @@ export default function TemplatesPage() {
             <tbody className="divide-y divide-brand-purple/6">
               {templates.map(t => (
                 <tr key={t.id} className="hover:bg-surface-subtle/40 transition-colors">
+
+                  {/* Name */}
                   <td className="px-5 py-4">
                     <p className="font-semibold text-content-primary">{t.name}</p>
                     {t.name_ar && <p className="text-xs text-content-muted mt-0.5" dir="rtl">{t.name_ar}</p>}
                     {t.description && <p className="text-xs text-content-muted mt-1 max-w-xs truncate">{t.description}</p>}
                   </td>
 
+                  {/* Purpose */}
                   <td className="px-5 py-4">
-                    <p className="text-content-secondary">{t.purpose || '-'}</p>
+                    <p className="text-content-secondary">{t.purpose || '—'}</p>
                     {t.purpose_ar && <p className="text-xs text-content-muted mt-0.5" dir="rtl">{t.purpose_ar}</p>}
                   </td>
 
+                  {/* Product Types */}
                   <td className="px-5 py-4">
                     <div className="flex flex-wrap gap-1">
                       {(t.product_types ?? []).map(pt => (
@@ -675,8 +567,10 @@ export default function TemplatesPage() {
                     </div>
                   </td>
 
+                  {/* Duration */}
                   <td className="px-5 py-4 text-content-secondary">{t.duration}</td>
 
+                  {/* Status */}
                   <td className="px-5 py-4">
                     {canManage ? (
                       <button
@@ -702,20 +596,13 @@ export default function TemplatesPage() {
                     )}
                   </td>
 
+                  {/* Created */}
                   <td className="px-5 py-4 text-content-muted text-xs">{fmt(t.created_at)}</td>
 
+                  {/* Actions */}
                   {canManage && (
                     <td className="px-5 py-4">
                       <div className="flex items-center justify-end gap-1">
-                        {t.background_image_url && (
-                          <Link
-                            href={`/templates/${t.id}/celebrity-images`}
-                            className="w-8 h-8 rounded-lg flex items-center justify-center text-content-muted hover:text-brand-purple hover:bg-surface-subtle transition-all"
-                            title="Celebrity Composites"
-                          >
-                            <ScanFace className="w-3.5 h-3.5" />
-                          </Link>
-                        )}
                         <button
                           onClick={() => openEdit(t)}
                           className="w-8 h-8 rounded-lg flex items-center justify-center text-content-muted hover:text-brand-purple hover:bg-surface-subtle transition-all"
@@ -740,6 +627,7 @@ export default function TemplatesPage() {
         )}
       </div>
 
+      {/* Drawer */}
       {drawerOpen && (
         <TemplateDrawer
           target={editTarget}
@@ -748,6 +636,7 @@ export default function TemplatesPage() {
         />
       )}
 
+      {/* Delete confirm */}
       {deleteTarget && (
         <DeleteModal
           name={deleteTarget.name}
