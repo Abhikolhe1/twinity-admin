@@ -101,7 +101,6 @@ export default function ProductTypesPage() {
   async function handleSave() {
     if (!form.slug.trim()) { setFormError('Slug is required'); return }
     if (!form.name.trim()) { setFormError('Name is required'); return }
-    if (!form.name_ar.trim()) { setFormError('Arabic name is required'); return }
     setSaving(true)
     setFormError('')
     try {
@@ -200,7 +199,6 @@ export default function ProductTypesPage() {
                     {t.icon && <span className="text-2xl leading-none">{t.icon}</span>}
                     <div>
                       <p className="font-bold text-content-primary text-sm">{t.name}</p>
-                      <p className="text-xs text-content-muted">{t.name_ar}</p>
                     </div>
                   </div>
                   <span className={`shrink-0 text-xs px-2 py-1 rounded-full font-medium ${t.is_active ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' : 'bg-gray-100 text-gray-500 border border-gray-200'}`}>
@@ -297,38 +295,26 @@ export default function ProductTypesPage() {
               </div>
 
               {/* Names */}
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3">
                 <div className="flex flex-col gap-1.5">
-                  <label className={labelCls}>Name (EN) <span className="text-red-500">*</span></label>
+                  <label className={labelCls}>Name <span className="text-red-500">*</span></label>
                   <input value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} placeholder="Short Product Ads" className={inputCls} />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <label className={labelCls}>Name (AR) <span className="text-red-500">*</span></label>
-                  <input value={form.name_ar} onChange={e => setForm(p => ({ ...p, name_ar: e.target.value }))} placeholder="إعلانات قصيرة" className={inputCls} dir="rtl" />
                 </div>
               </div>
 
               {/* Short descriptions */}
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3">
                 <div className="flex flex-col gap-1.5">
-                  <label className={labelCls}>Short Description (EN)</label>
+                  <label className={labelCls}>Short Description</label>
                   <input value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))} placeholder="Short celebrity Ad" className={inputCls} />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <label className={labelCls}>Short Description (AR)</label>
-                  <input value={form.description_ar} onChange={e => setForm(p => ({ ...p, description_ar: e.target.value }))} placeholder="إعلان مشهور قصير" className={inputCls} dir="rtl" />
                 </div>
               </div>
 
               {/* Long detail */}
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3">
                 <div className="flex flex-col gap-1.5">
-                  <label className={labelCls}>Detail (EN)</label>
+                  <label className={labelCls}>Detail</label>
                   <textarea rows={2} value={form.detail} onChange={e => setForm(p => ({ ...p, detail: e.target.value }))} placeholder="Full description..." className={textareaCls} />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <label className={labelCls}>Detail (AR)</label>
-                  <textarea rows={2} value={form.detail_ar} onChange={e => setForm(p => ({ ...p, detail_ar: e.target.value }))} placeholder="وصف كامل..." className={textareaCls} dir="rtl" />
                 </div>
               </div>
 
@@ -357,26 +343,18 @@ export default function ProductTypesPage() {
               </div>
 
               {/* Delivery */}
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3">
                 <div className="flex flex-col gap-1.5">
-                  <label className={labelCls}>Delivery Time (EN)</label>
+                  <label className={labelCls}>Delivery Time</label>
                   <input value={form.duration} onChange={e => setForm(p => ({ ...p, duration: e.target.value }))} placeholder="Delivery in 3–5 business days" className={inputCls} />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <label className={labelCls}>Delivery Time (AR)</label>
-                  <input value={form.duration_ar} onChange={e => setForm(p => ({ ...p, duration_ar: e.target.value }))} placeholder="التسليم في 3-5 أيام عمل" className={inputCls} dir="rtl" />
                 </div>
               </div>
 
               {/* Use cases */}
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3">
                 <div className="flex flex-col gap-1.5">
-                  <label className={labelCls}>Use Cases (EN) — comma-separated</label>
+                  <label className={labelCls}>Use Cases - comma-separated</label>
                   <input value={useCasesText} onChange={e => setUseCasesText(e.target.value)} placeholder="Brand Ads, Product Launches" className={inputCls} />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <label className={labelCls}>Use Cases (AR) — comma-separated</label>
-                  <input value={useCasesArText} onChange={e => setUseCasesArText(e.target.value)} placeholder="إعلانات العلامة التجارية، الإطلاق" className={inputCls} dir="rtl" />
                 </div>
               </div>
 
@@ -458,3 +436,5 @@ export default function ProductTypesPage() {
     </div>
   )
 }
+
+

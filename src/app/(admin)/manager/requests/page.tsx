@@ -8,12 +8,24 @@ import RejectReasonModal from '@/components/RejectReasonModal'
 
 type StatusFilter = 'all' | 'pending' | 'review' | 'breached' | 'delivered' | 'failed'
 
+const STATUS_COLORS: Record<string, string> = {
+  delivered: 'bg-emerald-100 text-emerald-700',
+  'in-progress': 'bg-surface-elevated text-brand-purple',
+  review: 'bg-amber-100 text-amber-700',
+  pending: 'bg-surface-subtle text-content-muted',
+  failed: 'bg-red-100 text-red-700',
+  cancelled: 'bg-surface-subtle text-content-muted',
+}
+
+const toUiStatus = (status?: string) => status === 'in_progress' ? 'in-progress' : status || 'pending'
+
 export default function ManagerRequestsPage() {
   const permissions = usePermissions()
   const [requests, setRequests] = useState<ManagerDashboardRequest[]>([])
   const [overview, setOverview] = useState<ManagerDashboardOverview | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [successMessage, setSuccessMessage] = useState('')
   const [actingRequestId, setActingRequestId] = useState<string | null>(null)
   const [rejectRequestId, setRejectRequestId] = useState<string | null>(null)
   const [search, setSearch] = useState('')
@@ -51,9 +63,11 @@ export default function ManagerRequestsPage() {
   async function approveRequest(jobId: string) {
     setActingRequestId(jobId)
     setError('')
+    setSuccessMessage('')
     try {
       await adminApi.managerApproveJob(jobId)
       await load()
+      setSuccessMessage('Request approved successfully.')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to approve request')
     } finally {
@@ -64,10 +78,12 @@ export default function ManagerRequestsPage() {
   async function rejectRequest(jobId: string, note: string) {
     setActingRequestId(jobId)
     setError('')
+    setSuccessMessage('')
     try {
       await adminApi.managerRejectJob(jobId, note)
       await load()
       setRejectRequestId(null)
+      setSuccessMessage('Request rejected successfully.')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to reject request')
     } finally {
@@ -95,6 +111,12 @@ export default function ManagerRequestsPage() {
       {error && (
         <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
           {error}
+        </div>
+      )}
+
+      {successMessage && (
+        <div className="mb-6 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+          {successMessage}
         </div>
       )}
 
@@ -179,8 +201,8 @@ export default function ManagerRequestsPage() {
                       <p className="mt-1 text-xs text-content-muted">{request.user?.company || request.user?.email || '-'}</p>
                     </td>
                     <td className="px-3 py-3">
-                      <span className="inline-flex rounded-full bg-surface-subtle px-3 py-1 text-xs font-semibold capitalize text-content-secondary">
-                        {request.status.replace(/[-_]/g, ' ')}
+                      <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold capitalize ${STATUS_COLORS[toUiStatus(request.status)] || 'bg-surface-subtle text-content-secondary'}`}>
+                        {toUiStatus(request.status).replace(/[-_]/g, ' ')}
                       </span>
                     </td>
                     <td className="px-3 py-3">
@@ -219,7 +241,7 @@ export default function ManagerRequestsPage() {
                           )}
                         </div>
                       ) : (
-                        <span className="text-xs text-content-muted">No action</span>
+                        <ActionState request={request} />
                       )}
                     </td>
                   </tr>
@@ -245,4 +267,38 @@ function slaTone(state: ManagerDashboardRequest['slaState']) {
   if (state === 'due_soon') return 'bg-amber-100 text-amber-700'
   if (state === 'completed') return 'bg-emerald-100 text-emerald-700'
   return 'bg-brand-purple/10 text-brand-purple'
+}
+
+function ActionState({ request }: { request: ManagerDashboardRequest }) {
+  const status = request.status.toLowerCase()
+
+  if (status === 'failed' || status === 'cancelled') {
+    return (
+      <span className="inline-flex rounded-full bg-red-100 px-3 py-1 text-xs font-semibold text-red-700">
+        Rejected
+      </span>
+    )
+  }
+
+  if (status === 'delivered') {
+    return (
+      <span className="inline-flex rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
+        Approved
+      </span>
+    )
+  }
+
+  if (status === 'pending' || status === 'in_progress' || status === 'in-progress') {
+    return (
+      <span className="inline-flex rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">
+        In progress
+      </span>
+    )
+  }
+
+  return (
+    <span className="inline-flex rounded-full bg-surface-subtle px-3 py-1 text-xs font-semibold capitalize text-content-secondary">
+      {request.status.replace(/[-_]/g, ' ')}
+    </span>
+  )
 }

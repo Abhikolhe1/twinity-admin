@@ -1,8 +1,9 @@
 'use client'
-import { useEffect, useRef, useState, useCallback } from 'react'
-import { Plus, Search, ToggleLeft, ToggleRight, Edit2, Trash2, X, Loader2, ChevronDown, AlertCircle, FileText } from 'lucide-react'
+import { useState, useCallback, useEffect, useRef } from 'react'
+import Link from 'next/link'
+import { Plus, Search, ToggleLeft, ToggleRight, Edit2, Trash2, X, Loader2, ChevronDown, AlertCircle, FileText, Globe, Upload, ScanFace } from 'lucide-react'
 import { adminApi } from '@/lib/api'
-import Spinner, { PageLoader } from '@/components/ui/Spinner'
+import Spinner from '@/components/ui/Spinner'
 import { usePermissions } from '@/lib/permissions-context'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -10,13 +11,13 @@ import { usePermissions } from '@/lib/permissions-context'
 interface Template {
   id: string
   name: string
-  name_ar: string
   description: string
-  description_ar: string
   purpose: string
-  purpose_ar: string
-  sample_script: string
-  sample_script_ar: string
+  language: string
+  script: string
+  background_image_url: string | null
+  creatify_prompt: string | null
+  video_generation_prompt: string | null
   product_types: string[]
   duration: string
   is_active: boolean
@@ -25,13 +26,13 @@ interface Template {
 
 type FormState = {
   name: string
-  nameAr: string
   description: string
-  descriptionAr: string
   purpose: string
-  purposeAr: string
-  sampleScript: string
-  sampleScriptAr: string
+  language: string
+  script: string
+  backgroundImageUrl: string
+  creatifyPrompt: string
+  videoGenerationPrompt: string
   productTypes: string[]
   duration: string
   isActive: boolean
@@ -40,8 +41,8 @@ type FormState = {
 // ── Constants ────────────────────────────────────────────────────────────────
 
 const PRODUCT_TYPES = [
-  { value: 'greeting',      label: 'Personal Greetings' },
-  { value: 'video-ad', label: 'Video Ad' },
+  { value: 'greeting',  label: 'Personal Greetings' },
+  { value: 'video-ad',  label: 'Video Ad' },
 ]
 
 const DURATIONS = ['15s', '30s', '45s', '60s', '90s', '120s']
@@ -54,13 +55,13 @@ const PURPOSE_OPTIONS = [
 
 const EMPTY_FORM: FormState = {
   name: '',
-  nameAr: '',
   description: '',
-  descriptionAr: '',
   purpose: '',
-  purposeAr: '',
-  sampleScript: '',
-  sampleScriptAr: '',
+  language: 'en',
+  script: '',
+  backgroundImageUrl: '',
+  creatifyPrompt: '',
+  videoGenerationPrompt: '',
   productTypes: [],
   duration: '30s',
   isActive: true,
@@ -68,17 +69,17 @@ const EMPTY_FORM: FormState = {
 
 function templateToForm(t: Template): FormState {
   return {
-    name:           t.name,
-    nameAr:         t.name_ar,
-    description:    t.description,
-    descriptionAr:  t.description_ar,
-    purpose:        t.purpose,
-    purposeAr:      t.purpose_ar,
-    sampleScript:   t.sample_script,
-    sampleScriptAr: t.sample_script_ar,
-    productTypes:   t.product_types ?? [],
-    duration:       t.duration ?? '30s',
-    isActive:       t.is_active,
+    name:                 t.name,
+    description:          t.description,
+    purpose:              t.purpose,
+    language:             t.language,
+    script:               t.script,
+    backgroundImageUrl:   t.background_image_url ?? '',
+    creatifyPrompt:       t.creatify_prompt ?? '',
+    videoGenerationPrompt: t.video_generation_prompt ?? '',
+    productTypes:         t.product_types ?? [],
+    duration:             t.duration ?? '30s',
+    isActive:             t.is_active,
   }
 }
 
@@ -115,33 +116,66 @@ function TemplateDrawer({
   const [form, setForm] = useState<FormState>(target ? templateToForm(target) : EMPTY_FORM)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [pendingImageFile, setPendingImageFile] = useState<File | null>(null)
+  const [localPreviewUrl, setLocalPreviewUrl] = useState<string>('')
+  const imageInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    return () => { if (localPreviewUrl) URL.revokeObjectURL(localPreviewUrl) }
+  }, [localPreviewUrl])
 
   const set = (k: keyof FormState, v: unknown) =>
     setForm(prev => ({ ...prev, [k]: v }))
 
-  function toggleProductType(pt: string) {
-    setForm(prev => ({
-      ...prev,
-      productTypes: prev.productTypes.includes(pt)
-        ? prev.productTypes.filter(x => x !== pt)
-        : [...prev.productTypes, pt],
-    }))
+  const hasGreeting = form.productTypes.includes('greeting')
+  const hasVideoAd  = form.productTypes.includes('video-ad')
+
+  function handleImageFile(file: File) {
+    if (localPreviewUrl) URL.revokeObjectURL(localPreviewUrl)
+    setPendingImageFile(file)
+    setLocalPreviewUrl(URL.createObjectURL(file))
+    if (imageInputRef.current) imageInputRef.current.value = ''
   }
+
+  const displayImageUrl = localPreviewUrl || form.backgroundImageUrl
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
-    if (!form.name.trim())        { setError('Name (English) is required'); return }
-    if (!form.nameAr.trim())      { setError('Name (Arabic) is required'); return }
-    if (!form.purpose.trim())     { setError('Purpose (English) is required'); return }
-    if (!form.sampleScript.trim()) { setError('Sample script is required'); return }
-    if (form.productTypes.length === 0) { setError('Select at least one product type'); return }
+    if (!form.name.trim())    { setError('Name is required'); return }
+    if (!form.purpose.trim()) { setError('Purpose is required'); return }
+    if (form.productTypes.length === 0) { setError('Select a product type'); return }
+    if (hasGreeting && !form.script.trim()) { setError('Script is required for greeting templates'); return }
+    if (hasVideoAd && !form.videoGenerationPrompt.trim()) {
+      setError('Video generation prompt is required for video-ad templates'); return
+    }
 
     setError('')
     setSaving(true)
     try {
+      let resolvedImageUrl = form.backgroundImageUrl
+      if (pendingImageFile) {
+        const fd = new FormData()
+        fd.append('image', pendingImageFile)
+        const uploadRes = await adminApi.uploadTemplateImage(fd)
+        resolvedImageUrl = uploadRes.url
+      }
+
+      const payload = {
+        name:                   form.name,
+        description:            form.description,
+        purpose:                form.purpose,
+        language:               form.language,
+        script:                 form.script,
+        backgroundImageUrl:     resolvedImageUrl || undefined,
+        creatifyPrompt:         form.creatifyPrompt || undefined,
+        videoGenerationPrompt:  form.videoGenerationPrompt || undefined,
+        productTypes:           form.productTypes,
+        duration:               form.duration,
+        isActive:               form.isActive,
+      }
       const res: any = isEdit
-        ? await adminApi.updateTemplate(target!.id, form)
-        : await adminApi.createTemplate(form)
+        ? await adminApi.updateTemplate(target!.id, payload)
+        : await adminApi.createTemplate(payload)
       onSaved(res.data)
     } catch (err: any) {
       setError(err.message || 'Save failed')
@@ -161,7 +195,7 @@ function TemplateDrawer({
               {isEdit ? 'Edit Template' : 'New Template'}
             </h2>
             <p className="text-xs text-content-muted mt-0.5">
-              {isEdit ? `Editing: ${target!.name}` : 'Create a new prompt template'}
+              {isEdit ? `Editing: ${target!.name}` : 'Create a new template'}
             </p>
           </div>
           <button onClick={onClose} className="w-8 h-8 rounded-full flex items-center justify-center text-content-muted hover:bg-surface-subtle transition-all">
@@ -172,69 +206,75 @@ function TemplateDrawer({
         {/* Body */}
         <form onSubmit={submit} className="flex-1 overflow-y-auto px-6 py-5 flex flex-col gap-5">
 
-          {/* Names */}
-          <div className="grid grid-cols-2 gap-4">
-            <Field label="Name (English) *">
-              <input className={inputCls} value={form.name} onChange={e => set('name', e.target.value)} placeholder="e.g. Birthday Wish" />
-            </Field>
-            <Field label="Name (Arabic) *">
-              <input className={inputCls} dir="rtl" value={form.nameAr} onChange={e => set('nameAr', e.target.value)} placeholder="الاسم بالعربية" />
-            </Field>
-          </div>
+          {/* Name */}
+          <Field label="Name *">
+            <input
+              className={inputCls}
+              value={form.name}
+              onChange={e => set('name', e.target.value)}
+              placeholder="e.g. Birthday Wish"
+            />
+          </Field>
 
-          {/* Descriptions */}
-          <div className="grid grid-cols-2 gap-4">
-            <Field label="Description (English)">
-              <textarea className={textareaCls} rows={2} value={form.description} onChange={e => set('description', e.target.value)} placeholder="Short description" />
-            </Field>
-            <Field label="Description (Arabic)">
-              <textarea className={textareaCls} dir="rtl" rows={2} value={form.descriptionAr} onChange={e => set('descriptionAr', e.target.value)} placeholder="الوصف بالعربية" />
-            </Field>
-          </div>
+          {/* Description */}
+          <Field label="Description">
+            <textarea
+              className={textareaCls}
+              rows={2}
+              value={form.description}
+              onChange={e => set('description', e.target.value)}
+              placeholder="Short description"
+            />
+          </Field>
 
           {/* Purpose */}
+          <Field label="Purpose *">
+            <div className="relative">
+              <select
+                className={`${inputCls} appearance-none pr-8`}
+                value={PURPOSE_OPTIONS.includes(form.purpose) ? form.purpose : 'Custom'}
+                onChange={e => {
+                  if (e.target.value !== 'Custom') set('purpose', e.target.value)
+                  else set('purpose', '')
+                }}
+              >
+                <option value="">Select purpose...</option>
+                {PURPOSE_OPTIONS.map(p => <option key={p} value={p}>{p}</option>)}
+              </select>
+              <ChevronDown className="w-3.5 h-3.5 text-content-muted absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            </div>
+            {(!PURPOSE_OPTIONS.includes(form.purpose) || form.purpose === '') && (
+              <input
+                className={`${inputCls} mt-2`}
+                value={form.purpose}
+                onChange={e => set('purpose', e.target.value)}
+                placeholder="Custom purpose..."
+              />
+            )}
+          </Field>
+
+          {/* Product Type + Duration */}
           <div className="grid grid-cols-2 gap-4">
-            <Field label="Purpose (English) *">
+            <Field label="Product Type *" hint="Determines which fields are required below">
               <div className="relative">
                 <select
                   className={`${inputCls} appearance-none pr-8`}
-                  value={PURPOSE_OPTIONS.includes(form.purpose) ? form.purpose : 'Custom'}
+                  value={form.productTypes[0] ?? ''}
                   onChange={e => {
-                    if (e.target.value !== 'Custom') set('purpose', e.target.value)
-                    else set('purpose', '')
+                    const val = e.target.value
+                    set('productTypes', val ? [val] : [])
+                    if (val === 'video-ad') set('language', 'en')
                   }}
                 >
-                  <option value="">Select purpose...</option>
-                  {PURPOSE_OPTIONS.map(p => <option key={p} value={p}>{p}</option>)}
+                  <option value="">Select type...</option>
+                  {PRODUCT_TYPES.map(({ value, label }) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
                 </select>
                 <ChevronDown className="w-3.5 h-3.5 text-content-muted absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
               </div>
-              {(!PURPOSE_OPTIONS.includes(form.purpose) || form.purpose === '') && (
-                <input className={`${inputCls} mt-2`} value={form.purpose} onChange={e => set('purpose', e.target.value)} placeholder="Custom purpose..." />
-              )}
             </Field>
-            <Field label="Purpose (Arabic)">
-              <input className={inputCls} dir="rtl" value={form.purposeAr} onChange={e => set('purposeAr', e.target.value)} placeholder="الغرض بالعربية" />
-            </Field>
-          </div>
 
-          {/* Product Types + Duration */}
-          <div className="grid grid-cols-2 gap-4">
-            <Field label="Product Types *" hint="Select all that apply">
-              <div className="flex flex-col gap-1.5 mt-1">
-                {PRODUCT_TYPES.map(({ value, label }) => (
-                  <label key={value} className="flex items-center gap-2 cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      checked={form.productTypes.includes(value)}
-                      onChange={() => toggleProductType(value)}
-                      className="w-3.5 h-3.5 accent-brand-purple"
-                    />
-                    <span className="text-sm text-content-primary">{label}</span>
-                  </label>
-                ))}
-              </div>
-            </Field>
             <Field label="Default Duration">
               <div className="relative">
                 <select
@@ -249,26 +289,132 @@ function TemplateDrawer({
             </Field>
           </div>
 
-          {/* Sample Scripts */}
-          <Field label="Sample Script (English) *" hint="This pre-fills the script field in the customer wizard">
-            <textarea
-              className={textareaCls}
-              rows={5}
-              value={form.sampleScript}
-              onChange={e => set('sampleScript', e.target.value)}
-              placeholder="Hey [Name]! Happy Birthday! Wishing you an amazing day full of joy..."
-            />
-          </Field>
-          <Field label="Sample Script (Arabic)">
-            <textarea
-              className={`${textareaCls}`}
-              dir="rtl"
-              rows={5}
-              value={form.sampleScriptAr}
-              onChange={e => set('sampleScriptAr', e.target.value)}
-              placeholder="مرحبًا [الاسم]! عيد ميلاد سعيد!..."
-            />
-          </Field>
+          {/* Prompt to pick a type */}
+          {form.productTypes.length === 0 && (
+            <div className="flex items-center gap-3 rounded-xl border border-dashed border-brand-purple/20 px-4 py-3 text-sm text-content-muted">
+              <ChevronDown className="w-4 h-4 shrink-0 opacity-50" />
+              Select a product type above to see the required fields.
+            </div>
+          )}
+
+          {/* Greeting fields */}
+          {hasGreeting && (
+            <>
+              <div className="border-t border-brand-purple/10 pt-4">
+                <p className="text-xs font-bold text-content-muted uppercase tracking-wider mb-4">Greeting (ElevenLabs + Creatify Aurora)</p>
+
+                <div className="flex flex-col gap-5">
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-xs font-semibold text-content-secondary">Script *</label>
+                      <div className="flex overflow-hidden rounded-lg border border-brand-purple/20">
+                        {[{ val: 'en', label: 'EN' }, { val: 'ar', label: 'AR' }].map(({ val, label }) => (
+                          <button
+                            key={val}
+                            type="button"
+                            onClick={() => set('language', val)}
+                            className="px-3 py-1 text-xs font-semibold transition-colors"
+                            style={form.language === val
+                              ? { background: '#9a78fe', color: '#fff' }
+                              : { background: 'transparent', color: 'rgba(66,34,102,0.50)' }}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <textarea
+                      className={textareaCls}
+                      rows={5}
+                      value={form.script}
+                      onChange={e => set('script', e.target.value)}
+                      placeholder="Hey [Name]! Happy Birthday! Wishing you an amazing day..."
+                    />
+                    <p className="text-[11px] text-content-muted mt-0.5">Sent to ElevenLabs to generate the celebrity voice-over. Use [Name] / [الاسم] as placeholders.</p>
+                  </div>
+
+              <Field label="Background Image" hint="Shown as the template card preview in the studio.">
+                    <input
+                      ref={imageInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={e => { if (e.target.files?.[0]) handleImageFile(e.target.files[0]) }}
+                    />
+                {displayImageUrl ? (
+                      <div className="relative rounded-xl overflow-hidden border border-brand-purple/20 bg-surface-subtle" style={{ aspectRatio: '16/9' }}>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={displayImageUrl} alt="" className="w-full h-full object-cover" />
+                    {pendingImageFile && (
+                      <span className="absolute top-2 left-2 rounded bg-amber-500/90 px-2 py-0.5 text-[10px] font-semibold text-white">
+                        Pending upload
+                      </span>
+                    )}
+                        <button
+                          type="button"
+                      onClick={() => {
+                        if (localPreviewUrl) URL.revokeObjectURL(localPreviewUrl)
+                        setLocalPreviewUrl('')
+                        setPendingImageFile(null)
+                        set('backgroundImageUrl', '')
+                      }}
+                          className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/60 flex items-center justify-center text-white hover:bg-black/80 transition-all"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div
+                        role="button"
+                        tabIndex={0}
+                    onClick={() => !saving && imageInputRef.current?.click()}
+                    onKeyDown={e => e.key === 'Enter' && !saving && imageInputRef.current?.click()}
+                        onDragOver={e => { e.preventDefault(); e.stopPropagation() }}
+                        onDrop={e => {
+                          e.preventDefault()
+                          const file = e.dataTransfer.files?.[0]
+                          if (file && file.type.startsWith('image/')) handleImageFile(file)
+                        }}
+                    className={`w-full rounded-xl border-2 border-dashed border-brand-purple/20 flex flex-col items-center justify-center gap-2 py-8 cursor-pointer hover:border-brand-purple/40 hover:bg-surface-subtle/50 transition-all select-none ${saving ? 'pointer-events-none opacity-60' : ''}`}
+                      >
+                    <Upload className="w-6 h-6 text-content-muted opacity-50" />
+                    <span className="text-xs font-medium text-content-secondary">Click or drag & drop to upload</span>
+                    <span className="text-[11px] text-content-muted">PNG, JPG, WebP — max 5 MB</span>
+                      </div>
+                    )}
+                  </Field>
+
+                  <Field label="Creatify Aurora Prompt" hint="Optional text prompt sent to Creatify Aurora to guide the visual generation.">
+                    <textarea
+                      className={textareaCls}
+                      rows={3}
+                      value={form.creatifyPrompt}
+                      onChange={e => set('creatifyPrompt', e.target.value)}
+                      placeholder="Celebratory scene with warm bokeh lighting..."
+                    />
+                  </Field>
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* Video-ad fields */}
+          {hasVideoAd && (
+            <div className="border-t border-brand-purple/10 pt-4">
+              <p className="text-xs font-bold text-content-muted uppercase tracking-wider mb-4">Video Ad (fal.ai Seedance 2.0)</p>
+
+              <Field label="Video Generation Prompt *"
+                hint="Prompt sent to fal.ai Seedance 2.0 to generate the ad video. No ElevenLabs script is used for video-ad jobs.">
+                <textarea
+                  className={textareaCls}
+                  rows={4}
+                  value={form.videoGenerationPrompt}
+                  onChange={e => set('videoGenerationPrompt', e.target.value)}
+                  placeholder="Dynamic product ad with cinematic transitions and bold text overlays..."
+                />
+              </Field>
+            </div>
+          )}
 
           {/* Status */}
           <Field label="Status">
@@ -367,40 +513,48 @@ function DeleteModal({
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 const PRODUCT_TYPE_LABELS: Record<string, string> = {
-  'greeting':      'Personal Greetings',
-  'video-ad': 'Video Ad',
+  'greeting':  'Personal Greetings',
+  'video-ad':  'Video Ad',
 }
 
 const PRODUCT_TYPE_COLORS: Record<string, string> = {
-  'greeting':      'bg-blue-50 text-blue-700',
-  'video-ad': 'bg-purple-50 text-purple-700',
+  'greeting':  'bg-blue-50 text-blue-700',
+  'video-ad':  'bg-purple-50 text-purple-700',
+}
+
+const LANG_LABEL: Record<string, string> = { en: 'EN', ar: 'AR' }
+const LANG_COLOR: Record<string, string>  = {
+  en: 'bg-sky-50 text-sky-700',
+  ar: 'bg-amber-50 text-amber-700',
 }
 
 export default function TemplatesPage() {
-  const [templates, setTemplates] = useState<Template[]>([])
-  const [loading, setLoading] = useState(true)
-  const [search, setSearch] = useState('')
+  const [templates, setTemplates]     = useState<Template[]>([])
+  const [loading, setLoading]         = useState(true)
+  const [search, setSearch]           = useState('')
   const [productFilter, setProductFilter] = useState('all')
-  const [statusFilter, setStatusFilter] = useState('all')
-  const [drawerOpen, setDrawerOpen] = useState(false)
-  const [editTarget, setEditTarget] = useState<Template | null>(null)
+  const [languageFilter, setLanguageFilter] = useState('all')
+  const [statusFilter, setStatusFilter]   = useState('all')
+  const [drawerOpen, setDrawerOpen]   = useState(false)
+  const [editTarget, setEditTarget]   = useState<Template | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Template | null>(null)
-  const [deleting, setDeleting] = useState(false)
-  const [toggling, setToggling] = useState<Set<string>>(new Set())
+  const [deleting, setDeleting]       = useState(false)
+  const [toggling, setToggling]       = useState<Set<string>>(new Set())
   const permissions = usePermissions()
   const canManage = permissions.includes('templates.manage')
 
   const fetchTemplates = useCallback(() => {
     setLoading(true)
     const params = new URLSearchParams()
-    if (search) params.set('search', search)
-    if (productFilter !== 'all') params.set('productType', productFilter)
-    if (statusFilter !== 'all') params.set('status', statusFilter)
+    if (search)                        params.set('search',      search)
+    if (productFilter  !== 'all')      params.set('productType', productFilter)
+    if (languageFilter !== 'all')      params.set('language',    languageFilter)
+    if (statusFilter   !== 'all')      params.set('status',      statusFilter)
     adminApi.templates(params.toString())
       .then((res: any) => setTemplates(res.data || []))
       .catch(() => null)
       .finally(() => setLoading(false))
-  }, [search, productFilter, statusFilter])
+  }, [search, productFilter, languageFilter, statusFilter])
 
   useEffect(() => { fetchTemplates() }, [fetchTemplates])
 
@@ -425,24 +579,13 @@ export default function TemplatesPage() {
     setDeleting(false)
   }
 
-  function openCreate() {
-    setEditTarget(null)
-    setDrawerOpen(true)
-  }
-
-  function openEdit(t: Template) {
-    setEditTarget(t)
-    setDrawerOpen(true)
-  }
+  function openCreate() { setEditTarget(null); setDrawerOpen(true) }
+  function openEdit(t: Template) { setEditTarget(t); setDrawerOpen(true) }
 
   function onSaved(t: Template) {
     setTemplates(prev => {
       const idx = prev.findIndex(x => x.id === t.id)
-      if (idx >= 0) {
-        const next = [...prev]
-        next[idx] = t
-        return next
-      }
+      if (idx >= 0) { const next = [...prev]; next[idx] = t; return next }
       return [t, ...prev]
     })
     setDrawerOpen(false)
@@ -454,9 +597,9 @@ export default function TemplatesPage() {
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-content-primary">Prompt Templates</h1>
+          <h1 className="text-2xl font-bold text-content-primary">Templates</h1>
           <p className="text-sm text-content-muted mt-1">
-            {templates.length} template{templates.length !== 1 ? 's' : ''} · Used in the customer video creation wizard
+            {templates.length} template{templates.length !== 1 ? 's' : ''} · One record per language
           </p>
         </div>
         {canManage && (
@@ -490,6 +633,19 @@ export default function TemplatesPage() {
           >
             <option value="all">All Product Types</option>
             {PRODUCT_TYPES.map(pt => <option key={pt.value} value={pt.value}>{pt.label}</option>)}
+          </select>
+          <ChevronDown className="w-3.5 h-3.5 text-content-muted absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+        </div>
+
+        <div className="relative">
+          <select
+            value={languageFilter}
+            onChange={e => setLanguageFilter(e.target.value)}
+            className="appearance-none pl-3 pr-8 py-2 rounded-xl border border-brand-purple/20 text-sm outline-none focus:border-brand-purple bg-white text-content-primary transition-colors"
+          >
+            <option value="all">All Languages</option>
+            <option value="en">English</option>
+            <option value="ar">Arabic</option>
           </select>
           <ChevronDown className="w-3.5 h-3.5 text-content-muted absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
         </div>
@@ -531,6 +687,7 @@ export default function TemplatesPage() {
             <thead>
               <tr className="border-b border-brand-purple/8">
                 <th className="px-5 py-3 text-left text-xs font-semibold text-content-muted uppercase tracking-wide">Template</th>
+                <th className="px-5 py-3 text-left text-xs font-semibold text-content-muted uppercase tracking-wide">Language</th>
                 <th className="px-5 py-3 text-left text-xs font-semibold text-content-muted uppercase tracking-wide">Purpose</th>
                 <th className="px-5 py-3 text-left text-xs font-semibold text-content-muted uppercase tracking-wide">Product Types</th>
                 <th className="px-5 py-3 text-left text-xs font-semibold text-content-muted uppercase tracking-wide">Duration</th>
@@ -546,14 +703,20 @@ export default function TemplatesPage() {
                   {/* Name */}
                   <td className="px-5 py-4">
                     <p className="font-semibold text-content-primary">{t.name}</p>
-                    {t.name_ar && <p className="text-xs text-content-muted mt-0.5" dir="rtl">{t.name_ar}</p>}
                     {t.description && <p className="text-xs text-content-muted mt-1 max-w-xs truncate">{t.description}</p>}
+                  </td>
+
+                  {/* Language */}
+                  <td className="px-5 py-4">
+                    <span className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full ${LANG_COLOR[t.language] ?? 'bg-surface-subtle text-content-muted'}`}>
+                      <Globe className="w-2.5 h-2.5" />
+                      {LANG_LABEL[t.language] ?? t.language.toUpperCase()}
+                    </span>
                   </td>
 
                   {/* Purpose */}
                   <td className="px-5 py-4">
                     <p className="text-content-secondary">{t.purpose || '—'}</p>
-                    {t.purpose_ar && <p className="text-xs text-content-muted mt-0.5" dir="rtl">{t.purpose_ar}</p>}
                   </td>
 
                   {/* Product Types */}
@@ -603,6 +766,15 @@ export default function TemplatesPage() {
                   {canManage && (
                     <td className="px-5 py-4">
                       <div className="flex items-center justify-end gap-1">
+                    {t.background_image_url && (
+                      <Link
+                        href={`/templates/${t.id}/celebrity-images`}
+                        className="w-8 h-8 rounded-lg flex items-center justify-center text-content-muted hover:text-brand-purple hover:bg-surface-subtle transition-all"
+                        title="Celebrity Composites"
+                      >
+                        <ScanFace className="w-3.5 h-3.5" />
+                      </Link>
+                    )}
                         <button
                           onClick={() => openEdit(t)}
                           className="w-8 h-8 rounded-lg flex items-center justify-center text-content-muted hover:text-brand-purple hover:bg-surface-subtle transition-all"

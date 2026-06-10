@@ -343,7 +343,7 @@ async function req<T>(path: string, options?: RequestInit): Promise<T> {
   if (res.status === 401 && getAdminToken(mode)) {
     clearAdminToken(mode)
     if (typeof window !== 'undefined')
-    throw new Error('Session expired')
+      throw new Error('Session expired')
   }
   const data = await res.json().catch(() => ({})) as any
   if (res.status === 429) throw new Error(resolveUserFriendlyMessage(res.status, data.message))
@@ -362,27 +362,27 @@ function getDashboardPrefix(mode: PortalMode): '/manager/dashboard' | '/admin/ma
 export const adminApi = {
   login: (body: object, _mode?: PortalMode) => req(`/admin/login`, { method: 'POST', body: JSON.stringify(body) }),
   forgotPassword: (body: { email: string }, _mode?: PortalMode) => req(`/admin/forgot-password`, { method: 'POST', body: JSON.stringify(body) }),
-  resetPassword:   (token: string, body: object, mode: PortalMode = getPortalMode()) => req(`${getAuthPrefix(mode)}/reset-password/${token}`, { method: 'POST', body: JSON.stringify(body) }),
-  dashboard:      () => req('/admin/dashboard'),
+  resetPassword: (token: string, body: object, mode: PortalMode = getPortalMode()) => req(`${getAuthPrefix(mode)}/reset-password/${token}`, { method: 'POST', body: JSON.stringify(body) }),
+  dashboard: () => req('/admin/dashboard'),
   reportingDashboard: (params = '') => req<{ success: boolean; data: AdminReportingDashboard }>(`/admin/reporting${params ? `?${params}` : ''}`),
-  users:          (params = '') => req(`/admin/users?${params}`),
-  getUser:        (id: string) => req(`/admin/users/${id}`),
-  updateUser:     (id: string, body: object) => req(`/admin/users/${id}/status`, { method: 'PATCH', body: JSON.stringify(body) }),
+  users: (params = '') => req(`/admin/users?${params}`),
+  getUser: (id: string) => req(`/admin/users/${id}`),
+  updateUser: (id: string, body: object) => req(`/admin/users/${id}/status`, { method: 'PATCH', body: JSON.stringify(body) }),
   getUserAuditLogs: (id: string, params = '') => req(`/admin/users/${id}/audit-logs?${params}`),
-  auditLogs:      (params = '') => req(`/admin/audit-logs?${params}`),
+  auditLogs: (params = '') => req(`/admin/audit-logs?${params}`),
 
-  managerLinks:         (params = '') => req(`/admin/celebrity-managers?${params}`),
+  managerLinks: (params = '') => req(`/admin/celebrity-managers?${params}`),
   getCelebrityManagers: (celebrityId: string) => req(`/admin/celebrity-managers/${celebrityId}/managers`),
-  addCelebrityManager:  (celebrityId: string, body: object) => req(`/admin/celebrity-managers/${celebrityId}/managers`, { method: 'POST', body: JSON.stringify(body) }),
+  addCelebrityManager: (celebrityId: string, body: object) => req(`/admin/celebrity-managers/${celebrityId}/managers`, { method: 'POST', body: JSON.stringify(body) }),
   updateCelebrityManager: (celebrityId: string, linkId: string, body: object) => req(`/admin/celebrity-managers/${celebrityId}/managers/${linkId}`, { method: 'PATCH', body: JSON.stringify(body) }),
   removeCelebrityManager: (celebrityId: string, linkId: string) => req(`/admin/celebrity-managers/${celebrityId}/managers/${linkId}`, { method: 'DELETE' }),
 
-  celebrities:    (params = '') => req(`/admin/celebrities?${params}`),
+  celebrities: (params = '') => req(`/admin/celebrities?${params}`),
   createCelebrityPortalAccess: (id: string) => req(`/admin/celebrities/${id}/portal-access`, { method: 'POST' }),
-  createCeleb:    (body: object) => req('/celebrities', { method: 'POST', body: JSON.stringify(body) }),
-  updateCeleb:    (id: string, body: object) => req(`/celebrities/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
-  toggleCeleb:    (id: string) => req(`/celebrities/${id}/toggle`, { method: 'PATCH' }),
-  cloneVoice:     (id: string, formData: FormData) => {
+  createCeleb: (body: object) => req('/celebrities', { method: 'POST', body: JSON.stringify(body) }),
+  updateCeleb: (id: string, body: object) => req(`/celebrities/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+  toggleCeleb: (id: string) => req(`/celebrities/${id}/toggle`, { method: 'PATCH' }),
+  cloneVoice: (id: string, formData: FormData) => {
     const mode = getPortalMode()
     const token = getAdminToken(mode)
     return fetch(`${BASE}/celebrities/${id}/clone-voice`, {
@@ -396,32 +396,32 @@ export const adminApi = {
       return data
     })
   },
-  deleteCeleb:    (id: string) => req(`/celebrities/${id}`, { method: 'DELETE' }),
+  deleteCeleb: (id: string) => req(`/celebrities/${id}`, { method: 'DELETE' }),
 
-  jobs:           (params = '') => req(`/jobs/admin?${params}`),
-  revisions:      (params = '') => req(`/jobs/admin/revisions?${params}`),
-  setPreviewUrl:  (id: string, watermarked_url: string) => req(`/jobs/admin/${id}/set-preview`, { method: 'POST', body: JSON.stringify({ watermarked_url }) }),
-  refunds:        (params = '') => req<{ success: boolean; data: AdminRefundRequest[]; total: number }>(`/jobs/admin/refunds${params ? `?${params}` : ''}`),
-  getRefund:      (id: string) => req<{ success: boolean; data: AdminRefundRequest }>(`/jobs/admin/refunds/${id}`),
-  approveRefund:  (id: string, body: { approvedAmount?: number; note?: string }) => req<{ success: boolean; data: AdminRefundRequest }>(`/jobs/admin/refunds/${id}/approve`, { method: 'POST', body: JSON.stringify(body) }),
-  rejectRefund:   (id: string, note: string) => req<{ success: boolean; data: AdminRefundRequest }>(`/jobs/admin/refunds/${id}/reject`, { method: 'POST', body: JSON.stringify({ note }) }),
-  processRefund:  (id: string, body: { paymentGateway?: string; paymentReference?: string; note?: string }) => req<{ success: boolean; data: AdminRefundRequest }>(`/jobs/admin/refunds/${id}/process`, { method: 'POST', body: JSON.stringify(body) }),
-  celebrityJobs:  (params = '') => req(`/jobs/celebrity/my${params ? `?${params}` : ''}`),
+  jobs: (params = '') => req(`/jobs/admin?${params}`),
+  revisions: (params = '') => req(`/jobs/admin/revisions?${params}`),
+  setPreviewUrl: (id: string, watermarked_url: string) => req(`/jobs/admin/${id}/set-preview`, { method: 'POST', body: JSON.stringify({ watermarked_url }) }),
+  refunds: (params = '') => req<{ success: boolean; data: AdminRefundRequest[]; total: number }>(`/jobs/admin/refunds${params ? `?${params}` : ''}`),
+  getRefund: (id: string) => req<{ success: boolean; data: AdminRefundRequest }>(`/jobs/admin/refunds/${id}`),
+  approveRefund: (id: string, body: { approvedAmount?: number; note?: string }) => req<{ success: boolean; data: AdminRefundRequest }>(`/jobs/admin/refunds/${id}/approve`, { method: 'POST', body: JSON.stringify(body) }),
+  rejectRefund: (id: string, note: string) => req<{ success: boolean; data: AdminRefundRequest }>(`/jobs/admin/refunds/${id}/reject`, { method: 'POST', body: JSON.stringify({ note }) }),
+  processRefund: (id: string, body: { paymentGateway?: string; paymentReference?: string; note?: string }) => req<{ success: boolean; data: AdminRefundRequest }>(`/jobs/admin/refunds/${id}/process`, { method: 'POST', body: JSON.stringify(body) }),
+  celebrityJobs: (params = '') => req(`/jobs/celebrity/my${params ? `?${params}` : ''}`),
   celebrityApproveJob: (id: string) => req(`/jobs/celebrity/my/${id}/approve`, { method: 'POST' }),
   celebrityRejectJob: (id: string, note: string) => req(`/jobs/celebrity/my/${id}/reject`, { method: 'POST', body: JSON.stringify({ note }) }),
-  updateJobStatus:(id: string, body: object) => req(`/jobs/admin/${id}/status`, { method: 'PATCH', body: JSON.stringify(body) }),
-  approveJob:     (id: string) => req(`/jobs/admin/${id}/approve`, { method: 'POST' }),
-  rejectJob:      (id: string, note: string) => req(`/jobs/admin/${id}/reject`, { method: 'POST', body: JSON.stringify({ note }) }),
+  updateJobStatus: (id: string, body: object) => req(`/jobs/admin/${id}/status`, { method: 'PATCH', body: JSON.stringify(body) }),
+  approveJob: (id: string) => req(`/jobs/admin/${id}/approve`, { method: 'POST' }),
+  rejectJob: (id: string, note: string) => req(`/jobs/admin/${id}/reject`, { method: 'POST', body: JSON.stringify({ note }) }),
   managerApproveJob: (id: string) => req(`/jobs/manager/${id}/approve`, { method: 'POST' }),
   managerRejectJob: (id: string, note: string) => req(`/jobs/manager/${id}/reject`, { method: 'POST', body: JSON.stringify({ note }) }),
   enableDownload: (id: string) => req(`/jobs/admin/${id}/enable-download`, { method: 'PATCH' }),
 
-  leads:          (params = '') => req(`/leads/admin?${params}`),
-  leadStats:      () => req('/leads/admin/stats'),
-  getLead:        (id: string) => req(`/leads/admin/${id}`),
-  updateLead:     (id: string, body: object) => req(`/leads/admin/${id}/status`, { method: 'PATCH', body: JSON.stringify(body) }),
+  leads: (params = '') => req(`/leads/admin?${params}`),
+  leadStats: () => req('/leads/admin/stats'),
+  getLead: (id: string) => req(`/leads/admin/${id}`),
+  updateLead: (id: string, body: object) => req(`/leads/admin/${id}/status`, { method: 'PATCH', body: JSON.stringify(body) }),
 
-  me:             (mode: PortalMode = getPortalMode()) => req<{ success: boolean; data: AdminSession; permissions: string[] }>(`${getAuthPrefix(mode)}/me`),
+  me: (mode: PortalMode = getPortalMode()) => req<{ success: boolean; data: AdminSession; permissions: string[] }>(`${getAuthPrefix(mode)}/me`),
   celebrityApplications: (params = '') => req<{ success: boolean; data: CelebrityApplication[]; total: number; page: number; pages: number }>(`/admin/celebrity-applications${params ? `?${params}` : ''}`),
   approveCelebrityApplication: (id: string) => req(`/admin/celebrity-applications/${id}/approve`, { method: 'POST' }),
   rejectCelebrityApplication: (id: string, note: string) => req(`/admin/celebrity-applications/${id}/reject`, { method: 'POST', body: JSON.stringify({ note }) }),
@@ -434,8 +434,8 @@ export const adminApi = {
   requestCelebrityProfileChanges: (id: string, note: string) => req(`/admin/celebrities/${id}/profile/request-changes`, { method: 'POST', body: JSON.stringify({ note }) }),
   activateCelebrityProfile: (id: string) => req(`/admin/celebrities/${id}/profile/activate`, { method: 'POST' }),
 
-  getSettings:    () => req('/admin/settings'),
-  saveSettings:   (body: object) => req('/admin/settings', { method: 'PUT', body: JSON.stringify(body) }),
+  getSettings: () => req('/admin/settings'),
+  saveSettings: (body: object) => req('/admin/settings', { method: 'PUT', body: JSON.stringify(body) }),
   getCelebrityMasters: () => req<{ success: boolean; data: CelebrityMasters }>('/admin/settings/celebrity-masters'),
   getCelebrityOnboardingMasters: () => req<{ success: boolean; data: CelebrityMasters }>('/celebrity-onboarding/masters'),
   saveCelebrityMasters: (body: CelebrityMasters) => req<{ success: boolean; data: CelebrityMasters }>('/admin/settings/celebrity-masters', { method: 'PUT', body: JSON.stringify(body) }),
@@ -455,22 +455,22 @@ export const adminApi = {
   },
   deleteWatermarkImage: () => req('/admin/settings/watermark-image', { method: 'DELETE' }),
 
-  getBlockedWords:   () => req('/admin/settings/blocked-words'),
-  addBlockedWord:    (words: string[]) => req('/admin/settings/blocked-words', { method: 'POST', body: JSON.stringify({ words }) }),
+  getBlockedWords: () => req('/admin/settings/blocked-words'),
+  addBlockedWord: (words: string[]) => req('/admin/settings/blocked-words', { method: 'POST', body: JSON.stringify({ words }) }),
   removeBlockedWord: (word: string) => req(`/admin/settings/blocked-words/${encodeURIComponent(word)}`, { method: 'DELETE' }),
 
-  roles:          () => req('/admin/roles'),
-  createRole:     (body: object) => req('/admin/roles', { method: 'POST', body: JSON.stringify(body) }),
-  updateRole:     (id: string, body: object) => req(`/admin/roles/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
-  deleteRole:     (id: string) => req(`/admin/roles/${id}`, { method: 'DELETE' }),
+  roles: () => req('/admin/roles'),
+  createRole: (body: object) => req('/admin/roles', { method: 'POST', body: JSON.stringify(body) }),
+  updateRole: (id: string, body: object) => req(`/admin/roles/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+  deleteRole: (id: string) => req(`/admin/roles/${id}`, { method: 'DELETE' }),
 
-  team:           () => req('/admin/team'),
-  createMember:   (body: object) => req('/admin/team', { method: 'POST', body: JSON.stringify(body) }),
-  updateMember:   (id: string, body: object) => req(`/admin/team/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
-  deleteMember:   (id: string) => req(`/admin/team/${id}`, { method: 'DELETE' }),
+  team: () => req('/admin/team'),
+  createMember: (body: object) => req('/admin/team', { method: 'POST', body: JSON.stringify(body) }),
+  updateMember: (id: string, body: object) => req(`/admin/team/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+  deleteMember: (id: string) => req(`/admin/team/${id}`, { method: 'DELETE' }),
 
-  managers:       () => req<{ success: boolean; data: Array<AdminSession & { celebrity_links?: Array<{ id: string; is_active: boolean; notes?: string | null; celebrity: { id: string; name: string }; permissions: string[] }> }> }>('/admin/celebrity-managers/managers'),
-  createManager:  (body: object) => req('/admin/celebrity-managers/managers', { method: 'POST', body: JSON.stringify(body) }),
+  managers: () => req<{ success: boolean; data: Array<AdminSession & { celebrity_links?: Array<{ id: string; is_active: boolean; notes?: string | null; celebrity: { id: string; name: string }; permissions: string[] }> }> }>('/admin/celebrity-managers/managers'),
+  createManager: (body: object) => req('/admin/celebrity-managers/managers', { method: 'POST', body: JSON.stringify(body) }),
   managerDashboardOverview: (mode: PortalMode = getPortalMode()) => req<{ success: boolean } & ManagerDashboardOverview>(`${getDashboardPrefix(mode)}/overview`),
   managerDashboardRequests: (params = '', mode: PortalMode = getPortalMode()) => req<{ success: boolean; data: ManagerDashboardRequest[]; total: number; page: number; pages: number }>(`${getDashboardPrefix(mode)}/requests${params ? `?${params}` : ''}`),
   managerDashboardTemplates: (mode: PortalMode = getPortalMode()) => req<{ success: boolean; data: ManagerDashboardCelebrityTemplates[]; templates: ManagerDashboardTemplate[] }>(`${getDashboardPrefix(mode)}/templates`),
@@ -482,15 +482,36 @@ export const adminApi = {
   submitManagerCelebrityProfile: (celebrityId: string, mode: PortalMode = getPortalMode()) => req<{ success: boolean; message: string }>(`${getDashboardPrefix(mode)}/celebrities/${celebrityId}/profile/submit`, { method: 'POST' }),
   activateManagerCelebrityProfile: (celebrityId: string, mode: PortalMode = getPortalMode()) => req<{ success: boolean; data: Record<string, unknown>; message: string }>(`${getDashboardPrefix(mode)}/celebrities/${celebrityId}/profile/activate`, { method: 'POST' }),
 
-  templates:      (params = '') => req(`/templates/admin?${params}`),
+  templates: (params = '') => req(`/templates/admin?${params}`),
   createTemplate: (body: object) => req('/templates', { method: 'POST', body: JSON.stringify(body) }),
   updateTemplate: (id: string, body: object) => req(`/templates/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
   toggleTemplate: (id: string) => req(`/templates/${id}/toggle`, { method: 'PATCH' }),
   deleteTemplate: (id: string) => req(`/templates/${id}`, { method: 'DELETE' }),
+  uploadTemplateImage: (formData: FormData) => {
+    const mode = getPortalMode()
+    const token = getAdminToken(mode)
+    return fetch(`${BASE}/templates/upload-image`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: formData,
+    }).then(async res => {
+      if (res.status === 401) { clearAdminToken(mode); throw new Error('Session expired') }
+      const data = await res.json().catch(() => ({})) as any
+      if (!res.ok) throw new Error(resolveUserFriendlyMessage(res.status, data.message))
+      return data as { success: boolean; url: string }
+    })
+  },
 
-  productTypes:       () => req('/product-types/admin'),
-  createProductType:  (body: object) => req('/product-types', { method: 'POST', body: JSON.stringify(body) }),
-  updateProductType:  (id: string, body: object) => req(`/product-types/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
-  toggleProductType:  (id: string) => req(`/product-types/${id}/toggle`, { method: 'PATCH' }),
-  deleteProductType:  (id: string) => req(`/product-types/${id}`, { method: 'DELETE' }),
+  templateAssets: (templateId?: string) => req(`/template-assets${templateId ? `?templateId=${templateId}` : ''}`),
+  generateTemplateAsset: (body: { templateId: string; celebrityId: string }) => req('/template-assets/generate', { method: 'POST', body: JSON.stringify(body) }),
+  uploadTemplateAsset: (body: { templateId: string; celebrityId: string; dataUrl: string }) => req('/template-assets/upload', { method: 'POST', body: JSON.stringify(body) }),
+  deleteTemplateAsset: (id: string) => req(`/template-assets/${id}`, { method: 'DELETE' }),
+  updateTemplateAssetTtsModel: (id: string, ttsModel: string) => req(`/template-assets/${id}/tts-model`, { method: 'PATCH', body: JSON.stringify({ ttsModel }) }),
+
+
+  productTypes: () => req('/product-types/admin'),
+  createProductType: (body: object) => req('/product-types', { method: 'POST', body: JSON.stringify(body) }),
+  updateProductType: (id: string, body: object) => req(`/product-types/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+  toggleProductType: (id: string) => req(`/product-types/${id}/toggle`, { method: 'PATCH' }),
+  deleteProductType: (id: string) => req(`/product-types/${id}`, { method: 'DELETE' }),
 }

@@ -145,10 +145,8 @@ function formToBody(f: FormState) {
 function validateCelebForm(form: FormState, isEdit = false): string | null {
   const email = form.contactEmail.trim()
   if (!form.name.trim()) return 'Name (EN) is required.'
-  if (!form.nameAr.trim()) return 'Name (AR) is required.'
   if (!form.industry.trim()) return 'Industry is required.'
   if (!form.nationality.trim()) return 'Nationality (EN) is required.'
-  if (!form.nationalityAr.trim()) return 'Nationality (AR) is required.'
   if (!isEdit && !email) return 'Contact email is required.'
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return 'Enter a valid contact email.'
   if (!form.bio.trim()) return 'Bio (English) is required.'
@@ -290,9 +288,6 @@ function CelebDrawer({
               <Field label="Name (English) *">
                 <input value={form.name} onChange={e => set('name', e.target.value)} className={inputCls} placeholder="e.g. Ahmed Al Rashidi" />
               </Field>
-              <Field label="Name (Arabic) *">
-                <input dir="rtl" value={form.nameAr} onChange={e => set('nameAr', e.target.value)} className={inputCls} placeholder="أحمد الراشدي" />
-              </Field>
               <Field label="Slug">
                 <input value={form.slug} onChange={e => set('slug', e.target.value)} className={inputCls} placeholder="ahmed-al-rashidi" />
               </Field>
@@ -312,9 +307,6 @@ function CelebDrawer({
               <Field label="Nationality (EN) *">
                 <input value={form.nationality} onChange={e => set('nationality', e.target.value)} className={inputCls} placeholder="Saudi Arabian" />
               </Field>
-              <Field label="Nationality (AR)">
-                <input dir="rtl" value={form.nationalityAr} onChange={e => set('nationalityAr', e.target.value)} className={inputCls} placeholder="سعودي" />
-              </Field>
               <Field label="Contact Email *">
                 <input
                   type="email"
@@ -333,9 +325,6 @@ function CelebDrawer({
             <div className="flex flex-col gap-3">
               <Field label="Bio (English)">
                 <textarea value={form.bio} onChange={e => set('bio', e.target.value)} className={textareaCls} rows={3} placeholder="Short celebrity bio..." />
-              </Field>
-              <Field label="Bio (Arabic)">
-                <textarea dir="rtl" value={form.bioAr} onChange={e => set('bioAr', e.target.value)} className={textareaCls} rows={3} placeholder="نبذة قصيرة..." />
               </Field>
             </div>
           </section>
@@ -475,9 +464,6 @@ function CelebDrawer({
               </Field>
               <Field label="Tags (EN)">
                 <input value={form.tags} onChange={e => set('tags', e.target.value)} className={inputCls} placeholder="actor, host, presenter" />
-              </Field>
-              <Field label="Tags (AR)">
-                <input dir="rtl" value={form.tagsAr} onChange={e => set('tagsAr', e.target.value)} className={inputCls} placeholder="ممثل، مذيع" />
               </Field>
             </div>
           </section>
@@ -867,7 +853,6 @@ export default function CelebritiesPage() {
   const searched = search.trim()
     ? celebs.filter(c =>
         c.name.toLowerCase().includes(search.toLowerCase()) ||
-        c.name_ar.includes(search) ||
         c.industry.includes(search.toLowerCase()))
     : celebs
 
@@ -987,7 +972,6 @@ export default function CelebritiesPage() {
               </div>
 
               <h3 className="font-bold text-content-primary text-sm">{celeb.name}</h3>
-              <p className="text-xs text-content-muted mt-0.5">{celeb.name_ar}</p>
               <p className="text-xs text-brand-purple capitalize mt-1">{celeb.industry}</p>
               {celeb.contact_email && (
                 <p className="mt-2 text-[11px] text-content-muted break-all">{celeb.contact_email}</p>
@@ -1115,3 +1099,5 @@ export default function CelebritiesPage() {
     </div>
   )
 }
+
+
